@@ -30,6 +30,10 @@
     zabutonImg.decoding = 'async';
     zabutonImg.src = 'zabuton.png';
 
+    const topImg = new Image();
+    topImg.decoding = 'async';
+    topImg.src = 'top.png';
+
     const hitBase = new Audio('cat.mp3');
     hitBase.preload = 'auto';
 
@@ -69,10 +73,11 @@
       }catch(e){}
     }
 
-    let catReady=false, catError=false, zabutonReady=false;
+    let catReady=false, catError=false, zabutonReady=false, topReady=false;
     catImg.onload=()=>{catReady = catImg.naturalWidth>0 && catImg.naturalHeight>0;};
     catImg.onerror=()=>{catError=true;};
     zabutonImg.onload=()=>{zabutonReady=true;};
+    topImg.onload=()=>{topReady=true;};
 
     function fitCanvas(){ canvas.width=window.innerWidth; canvas.height=window.innerHeight; }
     fitCanvas(); window.addEventListener('resize', fitCanvas);
@@ -98,6 +103,11 @@
     let awaitingTap = false;
     let msgType = null; // 'next' | 'congratsTap' | null
     let msgRect = null;
+
+    // Game state
+    // 'title' -> waiting tap with top.png
+    // 'play'  -> gameplay
+    let gameState = 'title';
 
     function setMessage(t, type){
       msgText=t; msgTimer=0; msgType=type||null;
@@ -130,12 +140,30 @@
 
     function resetLevel(){ makeLevel(); }
 
-    // Drag handling + tap-to-next
+    function startGame(){
+      level = 1; gameState = 'play';
+      resetLevel();
+    }
+
+    function goTitle(){
+      gameState = 'title';
+      // keep BGM running; background is back.png by default
+      document.body.style.backgroundImage = "url('back.png')";
+    }
+
+    // Drag handling + tap-to-next + title tap
     let dragId=null, dragOffset={x:0,y:0};
     function posFromEvent(e){ if(e.touches&&e.touches.length){const t=e.touches[0];return{x:t.clientX,y:t.clientY};} return{x:e.clientX,y:e.clientY}; }
 
     function onDown(e){
       const p=posFromEvent(e);
+
+      // Title tap to start
+      if (gameState === 'title'){
+        startGame();
+        e.preventDefault();
+        return;
+      }
 
       // If waiting to start next stage or restart, check hitbox of the label/button
       if (awaitingTap && msgRect){
@@ -144,7 +172,8 @@
           if (msgType === 'next'){
             level = clampLevel(level + 1);
           } else if (msgType === 'congratsTap'){
-            level = 1; // restart to stage 1
+            // back to title or stage1? -> spec says stage1 restart
+            level = 1; gameState = 'play';
           }
           awaitingTap = false; msgText = ''; msgType = null; msgRect = null;
           resetLevel();
@@ -152,6 +181,8 @@
           return;
         }
       }
+
+      if (gameState !== 'play') { e.preventDefault(); return; }
 
       // Drag bar
       const wb = walls[0];
@@ -161,9 +192,10 @@
       e.preventDefault();
     }
     function onMove(e){
-      if(dragId===null) return;
+      if(dragId===null || gameState!=='play') return;
       const p=posFromEvent(e);
       const w=walls[0];
+      if(!w) return;
       w.x=Math.min(world.width()-w.w, Math.max(0, p.x-dragOffset.x));
       w.y=Math.min(world.height()-w.h, Math.max(0, p.y-dragOffset.y));
       e.preventDefault();
@@ -201,6 +233,8 @@
     let last=performance.now();
 
     function update(dt){
+      if (gameState !== 'play') return; // nothing to update on title
+
       if (msgText && msgType !== 'next' && msgType !== 'congratsTap') msgTimer += dt;
       ball.rotation += dt*ROT_SPEED;
 
@@ -246,6 +280,24 @@
     function draw(){
       const W=world.width(), H=world.height();
       ctx.clearRect(0,0,W,H);
+
+      if (gameState === 'title'){
+        // draw top.png centered with contain
+        if (topReady && topImg.naturalWidth>0){
+          const iw = topImg.naturalWidth, ih = topImg.naturalHeight;
+          const s = Math.min(W/iw, H/ih);
+          const dw = iw*s, dh = ih*s;
+          const dx = (W-dw)/2, dy = (H-dh)/2;
+          ctx.drawImage(topImg, dx, dy, dw, dh);
+        } else {
+          // fallback background
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0,0,W,H);
+        }
+        // no other UI on title (tap anywhere to start)
+        msgRect = null; // not used on title
+        return;
+      }
 
       // (hole is invisible)
 
@@ -332,7 +384,8 @@
     }
     requestAnimationFrame(loop);
 
-    resetLevel();
+    // Start at title
+    goTitle();
 
     // ==== Minimal runtime tests (console only) ====
     function assert(name, cond){
@@ -344,6 +397,7 @@
     // Tests
     assert('clampLevel lower bound', clampLevel(0) === 1);
     assert('clampLevel upper bound', clampLevel(10) === 3);
+    assert('initial state is title', true && (function(){return true;})() && (function(s){return s==='title';})(gameState));
     (function(){
       const r = {x:10, y:10, w:100, h:40};
       const inside = (px,py)=> px>=r.x && px<=r.x+r.w && py>=r.y && py<=r.y+r.h;
