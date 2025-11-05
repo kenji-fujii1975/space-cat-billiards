@@ -32,7 +32,7 @@
     const endImg = new Image(); endImg.decoding='async'; endImg.src='end.png';
     const hitBase = new Audio('cat.mp3'); hitBase.preload='auto';
     const bgm = new Audio('catballbgm.mp3'); bgm.preload='auto'; bgm.loop=true; bgm.volume=0.4;
-    const endBgm = new Audio('endbgm.mp3'); endBgm.preload='auto'; endBgm.loop=true; endBgm.volume=0.4;
+    const endBgm = new Audio('endbgm.mp3'); endBgm.preload='auto'; endBgm.loop=false; endBgm.volume=0.4;
 
     // ===== State =====
     function fit(){ canvas.width = innerWidth; canvas.height = innerHeight; } fit(); addEventListener('resize', fit);
@@ -309,7 +309,7 @@
       const shrink = win ? Math.max(0, 1 - goalAnim) : 1; const drawScale = IMG_SCALE*shrink;
       if (!hiddenAfterWin && catReady && !catError && catImg.naturalWidth>0){ ctx.save(); ctx.translate(ball.x,ball.y); ctx.rotate(ball.rotation); const size=ball.r*2*drawScale; if (size>0.5){ try{ ctx.drawImage(catImg,-size/2,-size/2,size,size); }catch(_){ catError=true; } } ctx.restore(); } else { ctx.fillStyle='#10b981'; ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r*drawScale,0,Math.PI*2); ctx.fill(); }
       // overlay message
-      msgRect=null; if (msgText){ let alpha=1; if (msgType!=='next'&&msgType!=='congratsTap'){ const t=Math.min(1,msgTimer/MSG_DUR); alpha=1-t; } if(alpha>0){ ctx.save(); ctx.globalAlpha=alpha; const fontSize=Math.max(36, Math.min(W,H)*0.12); ctx.font="900 "+fontSize+"px system-ui, -apple-system"; ctx.textAlign='center'; ctx.textBaseline='middle'; const x=W/2,y=H*0.25; const tw=ctx.measureText(msgText).width, th=fontSize*1.2, pad=24; if(awaitingTap){ const rx=x-tw/2-pad, ry=y-th/2-pad/2, rw=tw+pad*2, rh=th+pad; pathRoundRect(ctx,rx,ry,rw,rh,14); ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fill(); msgRect={x:rx,y:ry,w:rw,h:rh}; } ctx.fillStyle='#fff'; ctx.fillText(msgText,x,y); ctx.restore(); } }
+      msgRect=null; if (msgText){ let alpha=1; if (msgType!=='next'&&msgType!=='congratsTap'){ const t=Math.min(1,msgTimer/MSG_DUR); alpha=1-t; } if(alpha>0){ ctx.save(); ctx.globalAlpha=alpha; const baseSize = (msgType==='next') ? Math.min(W,H)*0.08 : Math.min(W,H)*0.12; const fontSize = Math.max((msgType==='next'?28:36), baseSize); ctx.font="900 "+fontSize+"px system-ui, -apple-system"; ctx.textAlign='center'; ctx.textBaseline='middle'; const x=W/2,y=H*0.25; const tw=ctx.measureText(msgText).width, th=fontSize*1.2, pad=24; if(awaitingTap){ const rx=x-tw/2-pad, ry=y-th/2-pad/2, rw=tw+pad*2, rh=th+pad; pathRoundRect(ctx,rx,ry,rw,rh,14); ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fill(); msgRect={x:rx,y:ry,w:rw,h:rh}; } ctx.fillStyle='#fff'; ctx.fillText(msgText,x,y); ctx.restore(); } }
     }
 
     function pathRoundRect(ctx,x,y,w,h,r){ const rr=Math.max(0, Math.min(r,w/2,h/2)); ctx.beginPath(); ctx.moveTo(x+rr,y); ctx.lineTo(x+w-rr,y); ctx.quadraticCurveTo(x+w,y,x+w,y+rr); ctx.lineTo(x+w,y+h-rr); ctx.quadraticCurveTo(x+w,y+h,x+w-rr,y+h); ctx.lineTo(x+rr,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-rr); ctx.lineTo(x,y+rr); ctx.quadraticCurveTo(x,y,x+rr,y); ctx.closePath(); }
@@ -326,7 +326,7 @@
     assert('bgm loop', bgm.loop===true);
     // タイトル描画の健全性
     assert('overlay visible at title', (function(){ return getComputedStyle(document.getElementById('overlay')).display!=='none' && document.getElementById('overlayImg').getAttribute('src')==='top.png'; })());
-    assert('endBgm loop', endBgm.loop===true);
+    assert('endBgm loop disabled', endBgm.loop===false);
     (function(){ const hit=circleRectCollide(50,50,20,40,40,40,10); const miss=circleRectCollide(10,10,5,40,40,40,10); assert('circle-rect hit',hit===true); assert('circle-rect miss',miss===false); })();
     // 追加テスト: 定数と関数の存在確認
     assert('AUTO_CAPTURE_TIME positive', AUTO_CAPTURE_TIME>0);
