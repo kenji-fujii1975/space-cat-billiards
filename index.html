@@ -10,7 +10,7 @@
       background: url('back.png') center center / cover no-repeat fixed;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP";
     }
-    #canvas { display:block; width:100vw; height:100vh; touch-action: none; }
+    #canvas { display:block; width:100vw; height:100vh; touch-action: none; background: transparent; }
   </style>
 </head>
 <body>
@@ -33,9 +33,10 @@
     const hitBase = new Audio('cat.mp3');
     hitBase.preload = 'auto';
 
-    // Preload backgrounds (optional; body style will swap)
+    // Preload backgrounds
     const bg1 = new Image(); bg1.src = 'back.png';
     const bg2 = new Image(); bg2.src = 'back2.png';
+    const bg3 = new Image(); bg3.src = 'back3.png';
 
     // Audio unlock on first gesture (iOS)
     let audioUnlocked = false;
@@ -83,13 +84,13 @@
     let walls=[];
     let win=false, goalAnim=0, goal=null, postWinHandled=false;
 
-    // Overlay (NEXT STAGE! / Congratulations!)
+    // Overlay
     let msgText = '';
     let msgTimer = 0;
     const MSG_DUR = 1.5;
-    let awaitingTap = false;   // true when waiting for tap on NEXT STAGE
-    let msgType = null;        // 'next' | 'congrats' | null
-    let msgRect = null;        // tappable rect for NEXT STAGE
+    let awaitingTap = false;
+    let msgType = null;
+    let msgRect = null;
 
     function setMessage(t, type){
       msgText=t; msgTimer=0; msgType=type||null;
@@ -97,8 +98,9 @@
     }
 
     function applyBackground(){
-      // Level 1 => back.png, Level 2 => back2.png, Level 3 => back.png
-      const url = (level === 2) ? 'back2.png' : 'back.png';
+      let url = 'back.png';
+      if (level === 2) url = 'back2.png';
+      if (level === 3) url = 'back3.png';
       document.body.style.backgroundImage = `url('${url}')`;
     }
 
@@ -111,7 +113,6 @@
       const ang=rng(0,Math.PI*2);
       ball.vx=Math.cos(ang)*sp; ball.vy=Math.sin(ang)*sp;
 
-      // short zabuton bar
       const w=100,h=25,x=W/2-w/2,y=H-120;
       walls=[{x,y,w,h,id:0,draggable:true}];
 
@@ -128,16 +129,18 @@
     function onDown(e){
       const p=posFromEvent(e);
 
-      // If waiting on NEXT STAGE tap, prioritize click on label
       if (awaitingTap && msgRect){
-        const {x,y,w,h} = msgRect;
-        if (p.x >= x && p.x <= x+w && p.y >= y-h*0.8 && p.y <= y + h*0.2){ // generous hitbox
-          // advance stage
-          level = clampLevel(level+1);
+        // Use msgRect as TOP-LEFT box {x,y,w,h}
+        const {x, y, w, h} = msgRect;
+        if (p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h){
+          awaitingTap = false;
+          msgText = '';
+          level = clampLevel(level + 1);
           resetLevel();
           e.preventDefault();
           return;
         }
+      }
       }
 
       const w = walls[0];
@@ -180,8 +183,8 @@
     let last=performance.now();
 
     function update(dt){
-      if (msgText && msgType !== 'next') msgTimer += dt; // 'next' waits for tap, no timer fade
-      ball.rotation += dt*0.25;
+      if (msgText && msgType !== 'next') msgTimer += dt;
+      ball.rotation += dt*ROT_SPEED;
 
       if (!win){
         ball.x += ball.vx*dt;
@@ -213,9 +216,9 @@
         if (!postWinHandled && goalAnim >= 1){
           postWinHandled = true;
           if (level < 3){
-            setMessage('NEXT STAGE!', 'next');  // wait for tap
+            setMessage('NEXT STAGE!', 'next');
           } else {
-            setMessage('Congratulations!', 'congrats'); // fade out
+            setMessage('Congratulations!', 'congrats');
           }
         }
       }
@@ -225,10 +228,8 @@
       const W=world.width(), H=world.height();
       ctx.clearRect(0,0,W,H);
 
-      // hole
-      const hx=W/2, hy=H/2, hr=world.holeR;
-      ctx.fillStyle='rgba(0,0,0,0.8)';
-      ctx.beginPath(); ctx.arc(hx,hy,hr,0,Math.PI*2); ctx.fill();
+      // Transparent center (hole invisible)
+      // => skip drawing hole
 
       // bar (zabuton)
       const w=walls[0];
@@ -239,11 +240,9 @@
         ctx.beginPath(); ctx.roundRect(w.x,w.y,w.w,w.h,10); ctx.fill();
       }
 
-      // shrink during suction
       const shrink = win ? (1 - 0.85*(goalAnim*goalAnim)) : 1;
       const drawScale = IMG_SCALE * shrink;
 
-      // cat ball
       if (catReady && !catError && catImg.naturalWidth>0){
         ctx.save();
         ctx.translate(ball.x, ball.y);
@@ -261,35 +260,27 @@
       msgRect = null;
       if (msgText){
         let alpha = 1;
-        if (msgType !== 'next'){ // fade only for congrats
+        if (msgType !== 'next'){
           const t = Math.min(1, msgTimer/MSG_DUR);
           alpha = 1 - t;
         }
         if (alpha > 0){
           ctx.save();
           ctx.globalAlpha = alpha;
-          // BIGGER text per request
-          const fontSize = Math.max(36, Math.min(W, H) * 0.12); // 12% of short side
-          ctx.font = `800 ${fontSize}px system-ui, -apple-system`;
+          const fontSize = Math.max(36, Math.min(W, H) * 0.12);
+          ctx.font = `900 ${fontSize}px system-ui, -apple-system`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-
-          const x = W/2;
-          const y = H*0.25;
-          // tappable background for NEXT STAGE
+          const x = W/2, y = H*0.25;
           const metrics = ctx.measureText(msgText);
-          const tw = metrics.width;
-          const th = fontSize * 1.2;
-          const pad = 24;
+          const tw = metrics.width, th = fontSize * 1.2, pad = 24;
           if (msgType === 'next'){
             const rx = x - tw/2 - pad;
             const ry = y - th/2 - pad/2;
             const rw = tw + pad*2;
             const rh = th + pad;
-            // button bg
-            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
             roundRect(ctx, rx, ry, rw, rh, 14); ctx.fill();
-            // store hit rect
             msgRect = { x: rx, y: ry, w: rw, h: rh };
           }
           ctx.fillStyle = '#ffffff';
@@ -299,21 +290,11 @@
       }
     }
 
-    function roundRect(ctx, x,y,w,h,r){
-      const rr = Math.min(r, w/2, h/2);
-      ctx.beginPath();
-      ctx.moveTo(x+rr, y);
-      ctx.arcTo(x+w, y, x+w, y+h, rr);
-      ctx.arcTo(x+w, y+h, x, y+h, rr);
-      ctx.arcTo(x, y+h, x, y, rr);
-      ctx.arcTo(x, y, x+w, y, rr);
-      ctx.closePath();
-    }
+    function roundRect(ctx,x,y,w,h,r){ const rr=Math.min(r,w/2,h/2); ctx.beginPath(); ctx.moveTo(x+rr,y); ctx.arcTo(x+w,y,x+w,y+h,rr); ctx.arcTo(x+w,y+h,x,y+h,rr); ctx.arcTo(x,y+h,x,y,rr); ctx.arcTo(x,y,x+w,y,rr); ctx.closePath(); }
 
     function loop(ts){ const dt=Math.min(0.032,(ts-last)/1000); last=ts; update(dt); draw(); requestAnimationFrame(loop); }
     requestAnimationFrame(loop);
 
-    // Start
     resetLevel();
   })();
   </script>
