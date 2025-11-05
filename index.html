@@ -129,9 +129,9 @@
     function onDown(e){
       const p=posFromEvent(e);
 
+      // If waiting to start next stage, check hitbox of the label/button
       if (awaitingTap && msgRect){
-        // Use msgRect as TOP-LEFT box {x,y,w,h}
-        const {x, y, w, h} = msgRect;
+        const {x, y, w, h} = msgRect; // top-left box
         if (p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h){
           awaitingTap = false;
           msgText = '';
@@ -141,15 +141,22 @@
           return;
         }
       }
-      }
 
-      const w = walls[0];
-      if(p.x>=w.x&&p.x<=w.x+w.w&&p.y>=w.y&&p.y<=w.y+w.h){
-        dragId=w.id; dragOffset.x=p.x-w.x; dragOffset.y=p.y-w.y;
+      // Drag bar
+      const wb = walls[0];
+      if(p.x>=wb.x&&p.x<=wb.x+wb.w&&p.y>=wb.y&&p.y<=wb.y+wb.h){
+        dragId=wb.id; dragOffset.x=p.x-wb.x; dragOffset.y=p.y-wb.y;
       }
       e.preventDefault();
     }
-    function onMove(e){ if(dragId===null) return; const p=posFromEvent(e); const w=walls[0]; w.x=Math.min(world.width()-w.w, Math.max(0, p.x-dragOffset.x)); w.y=Math.min(world.height()-w.h, Math.max(0, p.y-dragOffset.y)); e.preventDefault(); }
+    function onMove(e){
+      if(dragId===null) return;
+      const p=posFromEvent(e);
+      const w=walls[0];
+      w.x=Math.min(world.width()-w.w, Math.max(0, p.x-dragOffset.x));
+      w.y=Math.min(world.height()-w.h, Math.max(0, p.y-dragOffset.y));
+      e.preventDefault();
+    }
     function onUp(e){ dragId=null; e.preventDefault(); }
     canvas.addEventListener('touchstart', onDown, {passive:false});
     canvas.addEventListener('touchmove', onMove, {passive:false});
@@ -228,8 +235,7 @@
       const W=world.width(), H=world.height();
       ctx.clearRect(0,0,W,H);
 
-      // Transparent center (hole invisible)
-      // => skip drawing hole
+      // Transparent center (hole invisible) -> skip drawing hole
 
       // bar (zabuton)
       const w=walls[0];
@@ -296,6 +302,33 @@
     requestAnimationFrame(loop);
 
     resetLevel();
+
+    // ==== Minimal runtime tests (console only; no UI) ====
+    function assert(name, cond){
+      if (!assert.results) assert.results = [];
+      const pass = !!cond;
+      assert.results.push({name, pass});
+      // Log cleanly
+      if (!pass) console.error('[TEST FAIL]', name);
+      else console.log('[TEST OK]', name);
+    }
+    // Tests
+    assert('clampLevel lower bound', clampLevel(0) === 1);
+    assert('clampLevel upper bound', clampLevel(10) === 3);
+    // Hitbox math: create a box at (10,10) size 100x40 and probe inside/outside
+    (function(){
+      const r = {x:10, y:10, w:100, h:40};
+      const inside = (px,py)=> px>=r.x && px<=r.x+r.w && py>=r.y && py<=r.y+r.h;
+      assert('hitbox inside', inside(50,30) === true);
+      assert('hitbox outside', inside(5,5) === false);
+    })();
+    // Circle-rect collision quick sanity
+    (function(){
+      const hit = circleRectCollide(50,50,20,40,40,40,10);
+      const miss = circleRectCollide(10,10,5,40,40,40,10);
+      assert('circle-rect hit', hit === true);
+      assert('circle-rect miss', miss === false);
+    })();
   })();
   </script>
 </body>
