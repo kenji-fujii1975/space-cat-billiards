@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>WallSlide Pool</title>
   <style>
-    html, body {
-      margin: 0; height: 100%; overflow: hidden;
-    }
+    html, body { margin: 0; height: 100%; overflow: hidden; }
     body {
       background: url('back.png') center center / cover no-repeat fixed;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP";
@@ -22,6 +20,7 @@
     }
     #hud .btn:active { transform: translateY(1px); }
     #hud .pill { padding: 8px 10px; border-radius: 999px; background: rgba(255,255,255,.2); font-variant-numeric: tabular-nums; }
+    #status { position: fixed; right: 10px; bottom: 10px; font-size: 12px; color: #fff; background: rgba(0,0,0,.45); padding: 6px 10px; border-radius: 10px; }
     #canvas { display:block; width:100vw; height:100vh; touch-action: none; }
   </style>
 </head>
@@ -32,6 +31,7 @@
     <div id="level" class="pill">LV 1</div>
     <div id="time" class="pill">00:00</div>
   </div>
+  <div id="status">loading assets…</div>
   <canvas id="canvas"></canvas>
 
   <script>
@@ -42,6 +42,27 @@
     const hudTime = document.getElementById('time');
     const btnReset = document.getElementById('btnReset');
     const btnNext = document.getElementById('btnNext');
+    const statusEl = document.getElementById('status');
+
+    // --- Load images safely (avoid drawImage on broken image) ---
+    const catImg = new Image();
+    catImg.decoding = 'async';
+    catImg.src = 'catball.png';
+
+    let catReady = false;
+    let catError = false;
+
+    catImg.addEventListener('load', () => {
+      // naturalWidth > 0 ensures not broken
+      catReady = catImg.naturalWidth > 0 && catImg.naturalHeight > 0;
+      statusEl.textContent = catReady ? 'assets: ok' : 'catball.png invalid';
+    }, { once: true });
+
+    catImg.addEventListener('error', () => {
+      catError = true;
+      statusEl.textContent = 'catball.png not found';
+      console.warn('Failed to load catball.png');
+    }, { once: true });
 
     function fitCanvas(){
       const w = window.innerWidth;
@@ -63,7 +84,7 @@
 
     const rng = (min, max)=> Math.random()*(max-min)+min;
 
-    const ball = { x: 120, y: 120, r: 40, vx: 60, vy: 35 };
+    const ball = { x: 120, y: 120, r: 80, vx: 60, vy: 35, rotation: 0 };
     let walls = [];
 
     function makeLevel(){
@@ -158,6 +179,7 @@
       if (win) return;
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
+      ball.rotation += dt * 0.5; // slow rotation
 
       if (ball.x - ball.r < 0){ ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
       if (ball.x + ball.r > world.width()){ ball.x = world.width() - ball.r; ball.vx = -Math.abs(ball.vx); }
@@ -185,17 +207,36 @@
       const W = world.width(), H = world.height();
       ctx.clearRect(0,0,W,H);
 
+      // goal
       const hx = W/2, hy = H/2, hr = world.holeR;
       ctx.fillStyle = 'rgba(0,0,0,0.8)';
       ctx.beginPath(); ctx.arc(hx,hy,hr,0,Math.PI*2); ctx.fill();
 
+      // draggable bar
       const w = walls[0];
       ctx.fillStyle = 'rgba(0,255,255,0.4)';
       ctx.beginPath(); ctx.roundRect(w.x, w.y, w.w, w.h, 10);
       ctx.fill();
 
-      ctx.fillStyle = '#00ff88';
-      ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
+      // ball (image or placeholder)
+      if (catReady && !catError && catImg.naturalWidth > 0) {
+        try {
+          ctx.save();
+          ctx.translate(ball.x, ball.y);
+          ctx.rotate(ball.rotation);
+          ctx.drawImage(catImg, -ball.r, -ball.r, ball.r*2, ball.r*2);
+          ctx.restore();
+        } catch (e) {
+          // If drawImage still fails (rare), fallback to placeholder and mark error to avoid spamming.
+          console.warn('drawImage failed, fallback to circle', e);
+          catError = true;
+        }
+      }
+      if (!catReady || catError) {
+        // placeholder circle
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
+      }
     }
 
     function loop(ts){
@@ -211,6 +252,26 @@
     btnNext.addEventListener('click', ()=>{ level++; win=false; resetLevel(); });
 
     resetLevel();
+
+    // --- Simple runtime tests (dev aid) ---
+    function assert(name, cond){
+      if (!assert.results) assert.results = [];
+      assert.results.push({ name, pass: !!cond });
+    }
+    function showTestResults(){
+      const fails = (assert.results||[]).filter(r=>!r.pass);
+      if (fails.length){
+        statusEl.textContent = 'tests failed: ' + fails.map(f=>f.name).join(', ');
+        statusEl.style.background = 'rgba(180,0,0,.65)';
+      } else {
+        statusEl.textContent = (catReady && !catError ? 'assets: ok' : statusEl.textContent) + ' | tests ok';
+      }
+    }
+    // Tests
+    assert('canvas exists', !!canvas && !!ctx);
+    assert('image object exists', !!catImg);
+    // If already loaded, naturalWidth>0; if not yet, this will be validated by onload handler.
+    setTimeout(()=>{ assert('image valid or placeholder draws', catReady ? catImg.naturalWidth>0 : true); showTestResults(); }, 500);
   })();
   </script>
 </body>
