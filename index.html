@@ -32,6 +32,7 @@
     const endImg = new Image(); endImg.decoding='async'; endImg.src='end.png';
     const hitBase = new Audio('cat.mp3'); hitBase.preload='auto';
     const bgm = new Audio('catballbgm.mp3'); bgm.preload='auto'; bgm.loop=true; bgm.volume=0.4;
+    const endBgm = new Audio('endbgm.mp3'); endBgm.preload='auto'; endBgm.loop=true; endBgm.volume=0.4;
 
     // ===== State =====
     function fit(){ canvas.width = innerWidth; canvas.height = innerHeight; } fit(); addEventListener('resize', fit);
@@ -72,12 +73,22 @@
     function unlockAudioOnce(){
       if (audioUnlocked) return;
       const tasks=[];
-      try{ hitBase.volume=0; tasks.push(hitBase.play().then(function(){hitBase.pause(); hitBase.currentTime=0; hitBase.volume=1;})); }catch(_){ }
+      try{
+        hitBase.volume=0; tasks.push(hitBase.play().then(function(){hitBase.pause(); hitBase.currentTime=0; hitBase.volume=1;}));
+      }catch(_){ }
+      try{
+        bgm.volume=0; tasks.push(bgm.play().then(function(){bgm.pause(); bgm.currentTime=0; bgm.volume=0.4;}));
+      }catch(_){ }
+      try{
+        endBgm.volume=0; tasks.push(endBgm.play().then(function(){endBgm.pause(); endBgm.currentTime=0; endBgm.volume=0.4;}));
+      }catch(_){ }
       audioUnlocked=true;
       Promise.allSettled(tasks).finally(function(){});
     }
     function playBgm(){ try{ if (bgm.paused) { bgm.currentTime=0; bgm.play().catch(function(){}); } }catch(_){} }
     function stopBgm(){ try{ if (!bgm.paused) bgm.pause(); }catch(_){} }
+    function playEndBgm(){ try{ if (endBgm.paused) { endBgm.currentTime=0; endBgm.play().catch(function(){}); } }catch(_){} }
+    function stopEndBgm(){ try{ if (!endBgm.paused) endBgm.pause(); }catch(_){} }catch(_){} }
     function playHit(){ const now=performance.now(); if (now-lastHitAt<120) return; lastHitAt=now; try{ const a=hitBase.cloneNode(); a.volume=0.9; a.play().catch(function(){});}catch(_){}}
 
     // ===== UI States =====
@@ -103,13 +114,13 @@
 
     function startGame(){
       gameState='play'; level=1; hideOverlay(); document.body.style.backgroundColor='#000';
-      unlockAudioOnce(); playBgm();
+      unlockAudioOnce(); stopEndBgm(); playBgm();
       hiddenAfterWin=false;
       makeLevel();
     }
 
     function goTitle(){
-      stopBgm(); gameState='title'; level=1; win=false; postWinHandled=false; goal=null; goalAnim=0; hiddenAfterWin=false; msgText=''; awaitingTap=false; msgType=null; msgRect=null;
+      stopEndBgm(); stopBgm(); gameState='title'; level=1; win=false; postWinHandled=false; goal=null; goalAnim=0; hiddenAfterWin=false; msgText=''; awaitingTap=false; msgType=null; msgRect=null;
       document.body.style.background='#000'; document.body.style.backgroundImage='none';
       showOverlay('top.png');
     }
@@ -120,6 +131,8 @@
       document.body.style.backgroundColor = '#000';
       document.body.style.backgroundImage = 'none';
       showOverlay('end.png');
+      playEndBgm();
+    }
     }
 
     // ===== Input =====
@@ -308,6 +321,7 @@
     function assert(name,cond){ const pass=!!cond; if(!pass) console.error('[TEST FAIL]',name); else console.log('[TEST OK]',name); }
     assert('initial state is title', gameState==='title');
     assert('bgm loop', bgm.loop===true);
+    assert('endBgm loop', endBgm.loop===true);
     (function(){ const hit=circleRectCollide(50,50,20,40,40,40,10); const miss=circleRectCollide(10,10,5,40,40,40,10); assert('circle-rect hit',hit===true); assert('circle-rect miss',miss===false); })();
     // 追加テスト: 定数と関数の存在確認
     assert('AUTO_CAPTURE_TIME positive', AUTO_CAPTURE_TIME>0);
