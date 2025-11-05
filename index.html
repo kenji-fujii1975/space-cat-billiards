@@ -51,8 +51,13 @@
     const TANGENTIAL_DAMP = 0.7;           // 接線方向の減衰（回り込みを抑える）
     const SUCTION_SKIP_COLLIDE = 1.0;      // 吸引域では壁反射スキップ
     const VEL_CAPTURE_THRESH = 80;         // 低速捕獲の速度閾値(px/s)
+    const AUTO_CAPTURE_DIST_MULT = 1.6;    // これ未満の距離で自動捕獲モードへ
+    const AUTO_CAPTURE_TIME = 0.7;         // 自動捕獲の所要時間(秒)
 
-    let walls=[]; let win=false, goalAnim=0, goal=null, postWinHandled=false;
+    let walls=[]; let win=false, goalAnim=0, goal=null, postWinHandled=false; let hiddenAfterWin=false;
+
+    // 自動捕獲モード（スムーズに中心へ吸い込む）
+    let capturing=false, captureT=0, captureStart=null;
 
     // messages
     let msgText=''; let msgTimer=0; const MSG_DUR=1.5; let awaitingTap=false; let msgType=null; let msgRect=null;
@@ -92,16 +97,19 @@
       const base=70+(level-1)*12; const sp=base*SPEED_SCALE; const ang=Math.random()*Math.PI*2;
       ball.vx=Math.cos(ang)*sp; ball.vy=Math.sin(ang)*sp; ball.x=W*0.25; ball.y=H*0.25; ball.rotation=0;
       const w=100,h=25; walls=[{x:W/2-w/2,y:H-120,w,h,id:0,draggable:true}];
-      win=false; goalAnim=0; goal=null; postWinHandled=false; msgText=''; msgType=null; awaitingTap=false; msgRect=null;
+      win=false; goalAnim=0; goal=null; postWinHandled=false; hiddenAfterWin=false; msgText=''; msgType=null; awaitingTap=false; msgRect=null;
+      capturing=false; captureT=0; captureStart=null;
     }
 
     function startGame(){
       gameState='play'; level=1; hideOverlay(); document.body.style.backgroundColor='#000';
       unlockAudioOnce(); playBgm();
+      hiddenAfterWin=false;
       makeLevel();
     }
+
     function goTitle(){
-      stopBgm(); gameState='title'; level=1; win=false; postWinHandled=false; goal=null; goalAnim=0; msgText=''; awaitingTap=false; msgType=null; msgRect=null;
+      stopBgm(); gameState='title'; level=1; win=false; postWinHandled=false; goal=null; goalAnim=0; hiddenAfterWin=false; msgText=''; awaitingTap=false; msgType=null; msgRect=null;
       document.body.style.background='#000'; document.body.style.backgroundImage='none';
       showOverlay('top.png');
     }
@@ -156,15 +164,19 @@
       if (gameState!=='play') return;
       if (msgText && msgType!=='next' && msgType!=='congratsTap') msgTimer+=dt; ball.rotation+=dt*ROT_SPEED;
 
-      // 位置更新
-      ball.x += ball.vx*dt; 
-      ball.y += ball.vy*dt;
+      // 位置更新（自動捕獲中は位置更新を専用処理に任せる）
+      if (!capturing){
+        ball.x += ball.vx*dt; 
+        ball.y += ball.vy*dt;
+      }
 
-      // 画面端反射
-      if(ball.x-ball.r<0){ball.x=ball.r;ball.vx=Math.abs(ball.vx);playHit();}
-      if(ball.x+ball.r>world.width()){ball.x=world.width()-ball.r;ball.vx=-Math.abs(ball.vx);playHit();}
-      if(ball.y-ball.r<0){ball.y=ball.r;ball.vy=Math.abs(ball.vy);playHit();}
-      if(ball.y+ball.r>world.height()){ball.y=world.height()-ball.r;ball.vy=-Math.abs(ball.vy);playHit();}
+      // 画面端反射（自動捕獲中は無効化）
+      if(!capturing){
+        if(ball.x-ball.r<0){ball.x=ball.r;ball.vx=Math.abs(ball.vx);playHit();}
+        if(ball.x+ball.r>world.width()){ball.x=world.width()-ball.r;ball.vx=-Math.abs(ball.vx);playHit();}
+        if(ball.y-ball.r<0){ball.y=ball.r;ball.vy=Math.abs(ball.vy);playHit();}
+        if(ball.y+ball.r>world.height()){ball.y=world.height()-ball.r;ball.vy=-Math.abs(ball.vy);playHit();}
+      }
 
       // 中心との距離
       const hx=world.width()/2, hy=world.height()/2, hr=world.holeR;
@@ -176,7 +188,7 @@
       const suctionActive = dist < suctionR;
 
       // 吸引（なめらかなスプリング＋粘性減衰）
-      if (suctionActive && dist >= captureR){
+      if (!capturing && suctionActive && dist >= captureR){
         const dxn = (hx - ball.x); // 生の距離ベクトル
         const dyn = (hy - ball.y);
         // ばね力: K*(x_target - x) → 中心へ
@@ -201,13 +213,35 @@
 
       // 速度が小さく近いなら捕獲
       const speed = Math.hypot(ball.vx, ball.vy);
-      if (dist < captureR * 1.15 && speed < VEL_CAPTURE_THRESH){
+      if (!capturing && dist < captureR * 1.15 && speed < VEL_CAPTURE_THRESH){
         win=true; goalAnim=0; goal={hx,hy,sx:ball.x,sy:ball.y}; ball.vx=0; ball.vy=0;
+      }
+
+      // 一定距離以内なら「自動捕獲モード」で位置を補間（停止を防ぐ）
+      if (!win && !capturing && dist < (hr * AUTO_CAPTURE_DIST_MULT + ball.r*0.2)){
+        capturing = true; captureT = 0; captureStart = {x:ball.x, y:ball.y};
+        // 以降の反射・衝突は無効化し、速度もゼロにして補間に委ねる
+        ball.vx = 0; ball.vy = 0;
+      }
+
+      if (capturing){
+        captureT += dt / AUTO_CAPTURE_TIME;
+        const t = Math.min(1, captureT);
+        const tt = t*t; // イーズイン
+        ball.x = captureStart.x + (hx - captureStart.x) * tt;
+        ball.y = captureStart.y + (hy - captureStart.y) * tt;
+        // 途中で勝手に広がらないよう常に中心へ
+        if (t >= 1){
+          capturing = false;
+          win = true;
+          goalAnim = 0;
+          goal = {hx, hy, sx:ball.x, sy:ball.y};
+        }
       }
 
       // 壁との衝突（吸引域ではスキップ）
       const w=walls[0];
-      if(w){
+      if(w && !capturing){
         const nearForSkip = suctionActive && dist < (hr * SUCTION_DIST_MULT * SUCTION_SKIP_COLLIDE);
         if (!nearForSkip && circleRectCollide(ball.x,ball.y,ball.r,w.x,w.y,w.w,w.h)){
           reflectOnRect(ball,w);
@@ -232,6 +266,7 @@
           ball.y=goal.sy+(goal.hy-goal.sy)*t;
         }
         if(!postWinHandled && goalAnim>=1){
+          hiddenAfterWin = true; // 完全に消す
           postWinHandled=true;
           if(level<3){
             setMessage('NEXT STAGE!','next');
@@ -250,8 +285,8 @@
       // bar
       const w=walls[0]; if (zabutonReady && w){ ctx.drawImage(zabutonImg, w.x,w.y,w.w,w.h); } else if (w){ pathRoundRect(ctx,w.x,w.y,w.w,w.h,10); ctx.fillStyle='rgba(0,255,255,0.4)'; ctx.fill(); }
       // cat
-      const shrink = win ? (1 - 0.85*(goalAnim*goalAnim)) : 1; const drawScale = IMG_SCALE*shrink;
-      if (catReady && !catError && catImg.naturalWidth>0){ ctx.save(); ctx.translate(ball.x,ball.y); ctx.rotate(ball.rotation); const size=ball.r*2*drawScale; try{ ctx.drawImage(catImg,-size/2,-size/2,size,size); }catch(_){ catError=true; } ctx.restore(); } else { ctx.fillStyle='#10b981'; ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r*drawScale,0,Math.PI*2); ctx.fill(); }
+      const shrink = win ? Math.max(0, 1 - goalAnim) : 1; const drawScale = IMG_SCALE*shrink;
+      if (!hiddenAfterWin && catReady && !catError && catImg.naturalWidth>0){ ctx.save(); ctx.translate(ball.x,ball.y); ctx.rotate(ball.rotation); const size=ball.r*2*drawScale; if (size>0.5){ try{ ctx.drawImage(catImg,-size/2,-size/2,size,size); }catch(_){ catError=true; } } ctx.restore(); } else { ctx.fillStyle='#10b981'; ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r*drawScale,0,Math.PI*2); ctx.fill(); }
       // overlay message
       msgRect=null; if (msgText){ let alpha=1; if (msgType!=='next'&&msgType!=='congratsTap'){ const t=Math.min(1,msgTimer/MSG_DUR); alpha=1-t; } if(alpha>0){ ctx.save(); ctx.globalAlpha=alpha; const fontSize=Math.max(36, Math.min(W,H)*0.12); ctx.font=`900 ${fontSize}px system-ui, -apple-system`; ctx.textAlign='center'; ctx.textBaseline='middle'; const x=W/2,y=H*0.25; const tw=ctx.measureText(msgText).width, th=fontSize*1.2, pad=24; if(awaitingTap){ const rx=x-tw/2-pad, ry=y-th/2-pad/2, rw=tw+pad*2, rh=th+pad; pathRoundRect(ctx,rx,ry,rw,rh,14); ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fill(); msgRect={x:rx,y:ry,w:rw,h:rh}; } ctx.fillStyle='#fff'; ctx.fillText(msgText,x,y); ctx.restore(); } }
     }
