@@ -17,7 +17,7 @@
   <canvas id="canvas"></canvas>
 
   <script>
-  (()=>{
+  (function(){
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
 
@@ -49,25 +49,18 @@
     let lastHitAt = 0;
     function unlockAudioOnce(){
       if (audioUnlocked) return;
-      // try to unlock both SFX and BGM with a user gesture
       const unlocks = [];
       hitBase.volume = 0;
       unlocks.push(hitBase.play().then(()=>{ hitBase.pause(); hitBase.currentTime = 0; hitBase.volume = 1; }));
       unlocks.push(bgm.play().then(()=>{ bgm.volume = 0.4; }));
-      Promise.allSettled(unlocks).finally(()=>{
-        audioUnlocked = true;
-      });
-    }
-    window.addEventListener('touchstart', unlockAudioOnce, {passive:false});
-    window.addEventListener('mousedown', unlockAudioOnce); hitBase.currentTime = 0; hitBase.volume = 1; audioUnlocked = true;
-      }).catch(()=>{});
+      Promise.allSettled(unlocks).finally(()=>{ audioUnlocked = true; });
     }
     window.addEventListener('touchstart', unlockAudioOnce, {passive:false});
     window.addEventListener('mousedown', unlockAudioOnce);
 
     function playHit(){
       const now = performance.now();
-      if (now - lastHitAt < 120) return;
+      if (now - lastHitAt < 120) return; // cooldown
       lastHitAt = now;
       try{
         const a = hitBase.cloneNode();
@@ -104,15 +97,11 @@
     const MSG_DUR = 1.5;
     let awaitingTap = false;
     let msgType = null; // 'next' | 'congratsTap' | null
-    let msgRect = null; // tappable rect
+    let msgRect = null;
 
     function setMessage(t, type){
-      msgText = t; msgTimer = 0; msgType = type || null;
-      // Await tap for both next and congratsTap
-      awaitingTap = (msgType === 'next' || msgType === 'congratsTap');
-    }{
       msgText=t; msgTimer=0; msgType=type||null;
-      awaitingTap = (msgType === 'next');
+      awaitingTap = (msgType === 'next' || msgType === 'congratsTap');
     }
 
     function applyBackground(){
@@ -131,10 +120,219 @@
       const ang=rng(0,Math.PI*2);
       ball.vx=Math.cos(ang)*sp; ball.vy=Math.sin(ang)*sp;
 
+      // short zabuton bar
       const w=100,h=25,x=W/2-w/2,y=H-120;
       walls=[{x,y,w,h,id:0,draggable:true}];
 
-     resetLevel();
+      win=false; goalAnim=0; goal=null; postWinHandled=false;
+      msgText=''; msgType=null; awaitingTap=false; msgRect=null;
+    }
+
+    function resetLevel(){ makeLevel(); }
+
+    // Drag handling + tap-to-next
+    let dragId=null, dragOffset={x:0,y:0};
+    function posFromEvent(e){ if(e.touches&&e.touches.length){const t=e.touches[0];return{x:t.clientX,y:t.clientY};} return{x:e.clientX,y:e.clientY}; }
+
+    function onDown(e){
+      const p=posFromEvent(e);
+
+      // If waiting to start next stage or restart, check hitbox of the label/button
+      if (awaitingTap && msgRect){
+        const {x, y, w, h} = msgRect; // top-left box
+        if (p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h){
+          if (msgType === 'next'){
+            level = clampLevel(level + 1);
+          } else if (msgType === 'congratsTap'){
+            level = 1; // restart to stage 1
+          }
+          awaitingTap = false; msgText = ''; msgType = null; msgRect = null;
+          resetLevel();
+          e.preventDefault();
+          return;
+        }
+      }
+
+      // Drag bar
+      const wb = walls[0];
+      if(wb && p.x>=wb.x&&p.x<=wb.x+wb.w&&p.y>=wb.y&&p.y<=wb.y+wb.h){
+        dragId=wb.id; dragOffset.x=p.x-wb.x; dragOffset.y=p.y-wb.y;
+      }
+      e.preventDefault();
+    }
+    function onMove(e){
+      if(dragId===null) return;
+      const p=posFromEvent(e);
+      const w=walls[0];
+      w.x=Math.min(world.width()-w.w, Math.max(0, p.x-dragOffset.x));
+      w.y=Math.min(world.height()-w.h, Math.max(0, p.y-dragOffset.y));
+      e.preventDefault();
+    }
+    function onUp(e){ dragId=null; e.preventDefault(); }
+    canvas.addEventListener('touchstart', onDown, {passive:false});
+    canvas.addEventListener('touchmove', onMove, {passive:false});
+    canvas.addEventListener('touchend', onUp, {passive:false});
+    canvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+
+    // Collision helpers
+    function circleRectCollide(cx,cy,cr,rx,ry,rw,rh){
+      const closestX=Math.max(rx,Math.min(cx,rx+rw));
+      const closestY=Math.max(ry,Math.min(cy,ry+rh));
+      const dx=cx-closestX, dy=cy-closestY;
+      return dx*dx + dy*dy <= cr*cr;
+    }
+    function reflectOnRect(ball,rect){
+      const{ x:cx,y:cy,r:cr}=ball; const{ x:rx,y:ry,w:rw,h:rh}=rect;
+      const penLeft=Math.abs((cx+cr)-rx);
+      const penRight=Math.abs((rx+rw)-(cx-cr));
+      const penTop=Math.abs((cy+cr)-ry);
+      const penBottom=Math.abs((ry+rh)-(cy-cr));
+      const minPen=Math.min(penLeft,penRight,penTop,penBottom);
+      const restitution=0.98;
+      if(minPen===penLeft){ball.x=rx-cr;ball.vx=-Math.abs(ball.vx)*restitution;}
+      else if(minPen===penRight){ball.x=rx+rw+cr;ball.vx=Math.abs(ball.vx)*restitution;}
+      else if(minPen===penTop){ball.y=ry-cr;ball.vy=-Math.abs(ball.vy)*restitution;}
+      else{ball.y=ry+rh+cr;ball.vy=Math.abs(ball.vy)*restitution;}
+      playHit();
+    }
+
+    let last=performance.now();
+
+    function update(dt){
+      if (msgText && msgType !== 'next' && msgType !== 'congratsTap') msgTimer += dt;
+      ball.rotation += dt*ROT_SPEED;
+
+      if (!win){
+        ball.x += ball.vx*dt;
+        ball.y += ball.vy*dt;
+
+        if(ball.x-ball.r<0){ball.x=ball.r;ball.vx=Math.abs(ball.vx);playHit();}
+        if(ball.x+ball.r>world.width()){ball.x=world.width()-ball.r;ball.vx=-Math.abs(ball.vx);playHit();}
+        if(ball.y-ball.r<0){ball.y=ball.r;ball.vy=Math.abs(ball.vy);playHit();}
+        if(ball.y+ball.r>world.height()){ball.y=world.height()-ball.r;ball.vy=-Math.abs(ball.vy);playHit();}
+
+        const w=walls[0];
+        if(w && circleRectCollide(ball.x,ball.y,ball.r,w.x,w.y,w.w,w.h)) reflectOnRect(ball,w);
+
+        // Invisible goal: still detect near center
+        const hx=world.width()/2, hy=world.height()/2, hr=world.holeR;
+        const dx=ball.x-hx, dy=ball.y-hy, d2=dx*dx+dy*dy;
+        if (d2 < hr*hr){
+          win = true;
+          goalAnim = 0;
+          goal = { hx, hy, sx: ball.x, sy: ball.y };
+          ball.vx = 0; ball.vy = 0;
+        }
+      } else {
+        if (goal && goalAnim < 1){
+          goalAnim = Math.min(1, goalAnim + dt / 0.9);
+          const t = goalAnim*goalAnim;
+          ball.x = goal.sx + (goal.hx - goal.sx)*t;
+          ball.y = goal.sy + (goal.hy - goal.sy)*t;
+        }
+        if (!postWinHandled && goalAnim >= 1){
+          postWinHandled = true;
+          if (level < 3){
+            setMessage('NEXT STAGE!', 'next');
+          } else {
+            setMessage('Congratulations!', 'congratsTap');
+          }
+        }
+      }
+    }
+
+    function draw(){
+      const W=world.width(), H=world.height();
+      ctx.clearRect(0,0,W,H);
+
+      // (hole is invisible)
+
+      // bar (zabuton)
+      const w=walls[0];
+      if (zabutonReady && w){
+        ctx.drawImage(zabutonImg, w.x, w.y, w.w, w.h);
+      } else if (w) {
+        ctx.fillStyle='rgba(0,255,255,0.4)';
+        pathRoundRect(ctx, w.x,w.y,w.w,w.h,10); ctx.fill();
+      }
+
+      const shrink = win ? (1 - 0.85*(goalAnim*goalAnim)) : 1;
+      const drawScale = IMG_SCALE * shrink;
+
+      if (catReady && !catError && catImg.naturalWidth>0){
+        ctx.save();
+        ctx.translate(ball.x, ball.y);
+        ctx.rotate(ball.rotation);
+        const size = ball.r*2*drawScale;
+        try { ctx.drawImage(catImg, -size/2, -size/2, size, size); }
+        catch(e){ catError=true; }
+        ctx.restore();
+      } else {
+        ctx.fillStyle='#10b981';
+        ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r*drawScale,0,Math.PI*2); ctx.fill();
+      }
+
+      // overlay message (button-like when awaitingTap)
+      msgRect = null;
+      if (msgText){
+        let alpha = 1;
+        if (msgType !== 'next' && msgType !== 'congratsTap'){
+          const t = Math.min(1, msgTimer/MSG_DUR);
+          alpha = 1 - t;
+        }
+        if (alpha > 0){
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          const fontSize = Math.max(36, Math.min(W, H) * 0.12);
+          ctx.font = `900 ${fontSize}px system-ui, -apple-system`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const x = W/2, y = H*0.25;
+          const metrics = ctx.measureText(msgText);
+          const tw = metrics.width, th = fontSize * 1.2, pad = 24;
+          if (awaitingTap){
+            const rx = x - tw/2 - pad;
+            const ry = y - th/2 - pad/2;
+            const rw = tw + pad*2;
+            const rh = th + pad;
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            pathRoundRect(ctx, rx, ry, rw, rh, 14); ctx.fill();
+            msgRect = { x: rx, y: ry, w: rw, h: rh };
+          }
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(msgText, x, y);
+          ctx.restore();
+        }
+      }
+    }
+
+    // roundRect polyfill
+    function pathRoundRect(ctx,x,y,w,h,r){
+      const rr = Math.max(0, Math.min(r, w/2, h/2));
+      ctx.beginPath();
+      ctx.moveTo(x+rr, y);
+      ctx.lineTo(x+w-rr, y);
+      ctx.quadraticCurveTo(x+w, y, x+w, y+rr);
+      ctx.lineTo(x+w, y+h-rr);
+      ctx.quadraticCurveTo(x+w, y+h, x+w-rr, y+h);
+      ctx.lineTo(x+rr, y+h);
+      ctx.quadraticCurveTo(x, y+h, x, y+h-rr);
+      ctx.lineTo(x, y+rr);
+      ctx.quadraticCurveTo(x, y, x+rr, y);
+      ctx.closePath();
+    }
+
+    function loop(ts){
+      const dt=Math.min(0.032,(ts-last)/1000); last=ts;
+      try{ update(dt); draw(); }
+      catch(e){ console.error('render error', e); }
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    resetLevel();
 
     // ==== Minimal runtime tests (console only) ====
     function assert(name, cond){
@@ -162,41 +360,6 @@
     assert('bgm object exists', !!bgm);
     assert('bgm loop enabled', bgm.loop === true);
     assert('sfx object exists', !!hitBase);
-  })();
-  </script>draw(); }
-      catch(e){ console.error('render error', e); }
-      requestAnimationFrame(loop);
-    }
-    requestAnimationFrame(loop);
-
-    resetLevel();
-
-    // ==== Minimal runtime tests (console only; no UI) ====
-    function assert(name, cond){
-      if (!assert.results) assert.results = [];
-      const pass = !!cond;
-      assert.results.push({name, pass});
-      // Log cleanly
-      if (!pass) console.error('[TEST FAIL]', name);
-      else console.log('[TEST OK]', name);
-    }
-    // Tests
-    assert('clampLevel lower bound', clampLevel(0) === 1);
-    assert('clampLevel upper bound', clampLevel(10) === 3);
-    // Hitbox math: create a box at (10,10) size 100x40 and probe inside/outside
-    (function(){
-      const r = {x:10, y:10, w:100, h:40};
-      const inside = (px,py)=> px>=r.x && px<=r.x+r.w && py>=r.y && py<=r.y+r.h;
-      assert('hitbox inside', inside(50,30) === true);
-      assert('hitbox outside', inside(5,5) === false);
-    })();
-    // Circle-rect collision quick sanity
-    (function(){
-      const hit = circleRectCollide(50,50,20,40,40,40,10);
-      const miss = circleRectCollide(10,10,5,40,40,40,10);
-      assert('circle-rect hit', hit === true);
-      assert('circle-rect miss', miss === false);
-    })();
   })();
   </script>
 </body>
