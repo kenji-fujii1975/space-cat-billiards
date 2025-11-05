@@ -62,11 +62,13 @@
       const unlocks = [];
       hitBase.volume = 0;
       unlocks.push(hitBase.play().then(()=>{ hitBase.pause(); hitBase.currentTime = 0; hitBase.volume = 1; }));
-      unlocks.push(bgm.play().then(()=>{ bgm.volume = 0.4; }));
+      // BGMを確実に起動・ミュート解除
+      unlocks.push(bgm.play().then(()=>{ bgm.muted = false; bgm.volume = 0.4; }).catch(()=>{}));
       Promise.allSettled(unlocks).finally(()=>{ audioUnlocked = true; });
     }
     window.addEventListener('touchstart', unlockAudioOnce, {passive:false});
     window.addEventListener('mousedown', unlockAudioOnce);
+    if (window.PointerEvent) window.addEventListener('pointerdown', unlockAudioOnce, {passive:false});
 
     function playHit(){
       const now = performance.now();
@@ -161,11 +163,17 @@
       // タイトル中はステージ背景を完全に消す
       document.body.style.backgroundImage = 'none';
       document.body.style.backgroundColor = '#000';
+      // タイトルからBGMを開始（モバイルではジェスチャーまで無音/失敗する可能性あり）
+      try { bgm.currentTime = 0; bgm.play().catch(()=>{}); } catch(_){}
     }
 
     // Drag handling + tap-to-next + title tap
     let dragId=null, dragOffset={x:0,y:0};
-    function posFromEvent(e){ if(e.touches&&e.touches.length){const t=e.touches[0];return{x:t.clientX,y:t.clientY};} return{x:e.clientX,y:e.clientY}; }
+    function posFromEvent(e){
+      if (e.touches && e.touches.length){ const t = e.touches[0]; return {x:t.clientX, y:t.clientY}; }
+      if (e.changedTouches && e.changedTouches.length){ const t = e.changedTouches[0]; return {x:t.clientX, y:t.clientY}; }
+      return {x:e.clientX, y:e.clientY};
+    };} return{x:e.clientX,y:e.clientY}; }
 
     function onDown(e){
       const p=posFromEvent(e);
@@ -219,6 +227,13 @@
     canvas.addEventListener('mousedown', onDown);
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    // Pointer Events (Safari/iOS含む幅広い端末向け)
+    if (window.PointerEvent) {
+      canvas.addEventListener('pointerdown', onDown, {passive:false});
+      canvas.addEventListener('pointermove', onMove, {passive:false});
+      canvas.addEventListener('pointerup', onUp, {passive:false});
+      canvas.addEventListener('pointercancel', onUp, {passive:false});
+    }
 
     // Collision helpers
     function circleRectCollide(cx,cy,cr,rx,ry,rw,rh){
@@ -409,7 +424,7 @@
     // Tests
     assert('clampLevel lower bound', clampLevel(0) === 1);
     assert('clampLevel upper bound', clampLevel(10) === 3);
-    assert('initial state is title', true && (function(){return true;})() && (function(s){return s==='title';})(gameState));
+    assert('initial state is title', gameState === 'title');
     (function(){
       const r = {x:10, y:10, w:100, h:40};
       const inside = (px,py)=> px>=r.x && px<=r.x+r.w && py>=r.y && py<=r.y+r.h;
@@ -421,6 +436,14 @@
       const miss = circleRectCollide(10,10,5,40,40,40,10);
       assert('circle-rect hit', hit === true);
       assert('circle-rect miss', miss === false);
+    })();
+    // posFromEvent pointer/touch/mouse
+    (function(){
+      const te = {touches:[{clientX:12, clientY:34}]};
+      const pe = {clientX:56, clientY:78};
+      const r1 = posFromEvent(te); const r2 = posFromEvent(pe);
+      assert('posFromEvent touch', r1.x===12 && r1.y===34);
+      assert('posFromEvent mouse', r2.x===56 && r2.y===78);
     })();
     // Audio tests (non-fatal)
     assert('bgm object exists', !!bgm);
