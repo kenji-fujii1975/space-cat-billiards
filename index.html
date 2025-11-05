@@ -34,13 +34,17 @@
 
     // ===== State =====
     function fit(){ canvas.width = innerWidth; canvas.height = innerHeight; } fit(); addEventListener('resize', fit);
-    const world = { width:()=>canvas.width, height:()=>canvas.height, holeR:26 };
+    const world = { width:()=>canvas.width, height:()=>canvas.height, holeR:34 }; // 少し広げて吸い込みやすく
     let level=1; const clampLevel=n=>Math.min(3, Math.max(1,n));
     let gameState='title'; // 'title' | 'play' | 'ending'
 
     // ball
     const ball={ x:120, y:120, r:80, vx:60, vy:35, rotation:0 };
     const IMG_SCALE=0.7, SPEED_SCALE=0.5, ROT_SPEED=0.25;
+    // 吸い込み調整
+    const CAPTURE_MARGIN = 0.45;           // ボール半径の何割を捕獲半径に足すか
+    const SUCTION_DIST_MULT = 2.0;         // 吸引をかけ始める距離（holeRの何倍）
+    const SUCTION_STRENGTH = 80;           // 吸引加速度（px/s^2）
     let walls=[]; let win=false, goalAnim=0, goal=null, postWinHandled=false;
 
     // messages
@@ -133,7 +137,19 @@
       if(ball.y-ball.r<0){ball.y=ball.r;ball.vy=Math.abs(ball.vy);playHit();}
       if(ball.y+ball.r>world.height()){ball.y=world.height()-ball.r;ball.vy=-Math.abs(ball.vy);playHit();}
       const w=walls[0]; if(w && circleRectCollide(ball.x,ball.y,ball.r,w.x,w.y,w.w,w.h)) reflectOnRect(ball,w);
-      const hx=world.width()/2, hy=world.height()/2, hr=world.holeR; const dx=ball.x-hx, dy=ball.y-hy; if(dx*dx+dy*dy<hr*hr){ win=true; goalAnim=0; goal={hx,hy,sx:ball.x,sy:ball.y}; ball.vx=0; ball.vy=0; }
+      const hx=world.width()/2, hy=world.height()/2, hr=world.holeR;
+      const dx=ball.x-hx, dy=ball.y-hy; const dist=Math.hypot(dx,dy);
+      const captureR = hr + ball.r*CAPTURE_MARGIN;
+      const suctionR = Math.max(captureR, hr*SUCTION_DIST_MULT);
+      if (dist < captureR){
+        win=true; goalAnim=0; goal={hx,hy,sx:ball.x,sy:ball.y}; ball.vx=0; ball.vy=0;
+      } else if (dist < suctionR){
+        // 穏やかな吸引力で中心へ寄せる
+        const nx = (hx - ball.x) / (dist || 1);
+        const ny = (hy - ball.y) / (dist || 1);
+        ball.vx += nx * SUCTION_STRENGTH * dt;
+        ball.vy += ny * SUCTION_STRENGTH * dt;
+      }
       if (win){ if(goal && goalAnim<1){ goalAnim=Math.min(1, goalAnim+dt/0.9); const t=goalAnim*goalAnim; ball.x=goal.sx+(goal.hx-goal.sx)*t; ball.y=goal.sy+(goal.hy-goal.sy)*t; } if(!postWinHandled && goalAnim>=1){ postWinHandled=true; if(level<3){ setMessage('NEXT STAGE!','next'); } else { gameState='ending'; showOverlay('end.png'); stopBgm(); } } }
     }
 
