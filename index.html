@@ -7,9 +7,9 @@
   <style>
     html, body { margin:0; height:100%; overflow:hidden; }
     body { background:#000; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP"; }
-    #canvas { position:fixed; inset:0; width:100vw; height:100vh; display:block; touch-action:none; background:transparent; }
+    #canvas { position:fixed; inset:0; width:100vw; height:100vh; display:block; touch-action:none; background:transparent; z-index:0; }
     /* 画像オーバーレイ（タイトル/エンディング用。キャンバス非依存） */
-    #overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:auto; cursor:pointer; }
+    #overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:auto; cursor:pointer; z-index:10; background: rgba(0,0,0,1); }
     #overlay img { max-width:100%; max-height:100%; object-fit:contain; pointer-events:none; -webkit-user-drag:none; user-select:none; }
   </style>
 </head>
@@ -88,7 +88,7 @@
     function playBgm(){ try{ if (bgm.paused) { bgm.currentTime=0; bgm.play().catch(function(){}); } }catch(_){} }
     function stopBgm(){ try{ if (!bgm.paused) bgm.pause(); }catch(_){} }
     function playEndBgm(){ try{ if (endBgm.paused) { endBgm.currentTime=0; endBgm.play().catch(function(){}); } }catch(_){} }
-    function stopEndBgm(){ try{ if (!endBgm.paused) endBgm.pause(); }catch(_){} }catch(_){} }
+    function stopEndBgm(){ try{ if (!endBgm.paused) endBgm.pause(); }catch(_){} }
     function playHit(){ const now=performance.now(); if (now-lastHitAt<120) return; lastHitAt=now; try{ const a=hitBase.cloneNode(); a.volume=0.9; a.play().catch(function(){});}catch(_){}}
 
     // ===== UI States =====
@@ -120,10 +120,14 @@
     }
 
     function goTitle(){
-      stopEndBgm(); stopBgm(); gameState='title'; level=1; win=false; postWinHandled=false; goal=null; goalAnim=0; hiddenAfterWin=false; msgText=''; awaitingTap=false; msgType=null; msgRect=null;
+      stopEndBgm(); stopBgm();
+      gameState='title';
+      level=1; win=false; postWinHandled=false; goal=null; goalAnim=0; hiddenAfterWin=false; capturing=false; captureT=0; captureStart=null; pendingEnding=0;
+      msgText=''; awaitingTap=false; msgType=null; msgRect=null;
       document.body.style.background='#000'; document.body.style.backgroundImage='none';
       showOverlay('top.png');
     }
+
     function goEnding(){
       stopBgm();
       gameState='ending';
@@ -132,7 +136,6 @@
       document.body.style.backgroundImage = 'none';
       showOverlay('end.png');
       playEndBgm();
-    }
     }
 
     // ===== Input =====
@@ -321,6 +324,8 @@
     function assert(name,cond){ const pass=!!cond; if(!pass) console.error('[TEST FAIL]',name); else console.log('[TEST OK]',name); }
     assert('initial state is title', gameState==='title');
     assert('bgm loop', bgm.loop===true);
+    // タイトル描画の健全性
+    assert('overlay visible at title', (function(){ return getComputedStyle(document.getElementById('overlay')).display!=='none' && document.getElementById('overlayImg').getAttribute('src')==='top.png'; })());
     assert('endBgm loop', endBgm.loop===true);
     (function(){ const hit=circleRectCollide(50,50,20,40,40,40,10); const miss=circleRectCollide(10,10,5,40,40,40,10); assert('circle-rect hit',hit===true); assert('circle-rect miss',miss===false); })();
     // 追加テスト: 定数と関数の存在確認
