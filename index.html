@@ -9,8 +9,8 @@
     body { background:#000; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP"; }
     #canvas { position:fixed; inset:0; width:100vw; height:100vh; display:block; touch-action:none; background:transparent; }
     /* 画像オーバーレイ（タイトル/エンディング用。キャンバス非依存） */
-    #overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:auto; }
-    #overlay img { max-width:100%; max-height:100%; object-fit:contain; }
+    #overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:auto; cursor:pointer; }
+    #overlay img { max-width:100%; max-height:100%; object-fit:contain; pointer-events:none; -webkit-user-drag:none; user-select:none; }
   </style>
 </head>
 <body>
@@ -18,7 +18,8 @@
   <div id="overlay" aria-label="screen overlay"><img id="overlayImg" alt="overlay" /></div>
 
   <script>
-  (function(){
+  // DOM 完全読込後に起動（IIFE 由来の構文エラーを回避）
+  document.addEventListener('DOMContentLoaded', function(){
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const overlay = document.getElementById('overlay');
@@ -41,6 +42,7 @@
     // ball
     const ball={ x:120, y:120, r:80, vx:60, vy:35, rotation:0 };
     const IMG_SCALE=0.7, SPEED_SCALE=0.5, ROT_SPEED=0.25;
+
     // 吸い込み・捕獲（なめらかなスプリング吸引）
     const CAPTURE_MARGIN = 0.9;            // 捕獲半径をやや広め
     const SUCTION_DIST_MULT = 3.2;         // 吸引をかけ始める距離（holeRの何倍）
@@ -49,14 +51,16 @@
     const TANGENTIAL_DAMP = 0.7;           // 接線方向の減衰（回り込みを抑える）
     const SUCTION_SKIP_COLLIDE = 1.0;      // 吸引域では壁反射スキップ
     const VEL_CAPTURE_THRESH = 80;         // 低速捕獲の速度閾値(px/s)
-         // 低速捕獲の速度閾値(px/s)
 
     let walls=[]; let win=false, goalAnim=0, goal=null, postWinHandled=false;
 
     // messages
     let msgText=''; let msgTimer=0; const MSG_DUR=1.5; let awaitingTap=false; let msgType=null; let msgRect=null;
 
-    let catReady=false, catError=false, zabutonReady=false; catImg.onload=()=>{catReady=true}; catImg.onerror=()=>{catError=true}; zabutonImg.onload=()=>{zabutonReady=true};
+    let catReady=false, catError=false, zabutonReady=false; 
+    catImg.onload=()=>{catReady=true}; 
+    catImg.onerror=()=>{catError=true}; 
+    zabutonImg.onload=()=>{zabutonReady=true};
 
     // ===== Audio =====
     let audioUnlocked=false, lastHitAt=0;
@@ -113,6 +117,15 @@
     // ===== Input =====
     function posFromEvent(e){ if(e.touches&&e.touches.length){const t=e.touches[0]; return {x:t.clientX,y:t.clientY};} if(e.changedTouches&&e.changedTouches.length){const t=e.changedTouches[0]; return {x:t.clientX,y:t.clientY};} return {x:e.clientX,y:e.clientY}; }
 
+    // オーバーレイ直付け（タイトル→開始 / エンディング→タイトル）
+    function startFromOverlay(e){
+      if (gameState === 'title') { startGame(); e?.preventDefault?.(); return; }
+      if (gameState === 'ending') { goTitle(); e?.preventDefault?.(); return; }
+    }
+    ['pointerdown','touchstart','mousedown','click'].forEach(t=>{
+      overlay.addEventListener(t, startFromOverlay, {passive:false});
+    });
+
     function onAnyDown(e){
       const p=posFromEvent(e);
       if (gameState==='title'){ startGame(); e.preventDefault(); return; }
@@ -129,7 +142,7 @@
     function onMove(e){ if(!dragging||gameState!=='play') return; const p=posFromEvent(e); const w=walls[0]; if(!w) return; w.x=Math.min(world.width()-w.w, Math.max(0, p.x-dragOffset.x)); w.y=Math.min(world.height()-w.h, Math.max(0, p.y-dragOffset.y)); e.preventDefault(); }
     function onUp(){ dragging=false; }
 
-    // attach listeners globally & canvas
+    // attach listeners globally
     ['mousedown','touchstart','pointerdown','click'].forEach(t=>{ addEventListener(t,onAnyDown,{passive:false}); });
     ['mousemove','touchmove','pointermove'].forEach(t=>{ addEventListener(t,onMove,{passive:false}); });
     ['mouseup','touchend','pointerup','pointercancel'].forEach(t=>{ addEventListener(t,onUp,{passive:true}); });
@@ -225,11 +238,6 @@
           }else{
             goEnding();
           }
-        }else{
-            gameState='ending';
-            showOverlay('end.png');
-            stopBgm();
-          }
         }
       }
     }
@@ -261,7 +269,7 @@
     assert('initial state is title', gameState==='title');
     assert('bgm loop', bgm.loop===true);
     (function(){ const hit=circleRectCollide(50,50,20,40,40,40,10); const miss=circleRectCollide(10,10,5,40,40,40,10); assert('circle-rect hit',hit===true); assert('circle-rect miss',miss===false); })();
-  })();
+  });
   </script>
 </body>
 </html>
