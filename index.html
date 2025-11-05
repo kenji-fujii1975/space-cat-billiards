@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>WallSlide Pool</title>
+  <style>
+    :root {
+      --bg: #0f1220;
+      --panel: #171a2a;
+      --ink: #e9ecf5;
+      --accent: #67e8f9;
+      --accent-2: #a7f3d0;
+    }
+    html, body {
+      margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Apple Color Emoji", "Segoe UI Emoji";
+    }
+    #hud {
+      position: fixed; inset: 0 auto auto 0; padding: 10px 12px; z-index: 10; display: flex; gap: 8px; align-items: center;
+      background: linear-gradient(90deg, rgba(15,18,32,0.9), rgba(15,18,32,0.0));
+      border-bottom-right-radius: 12px;
+      user-select: none; -webkit-user-select: none;
+    }
+    #hud .btn {
+      background: var(--panel); color: var(--ink); border: 1px solid rgba(255,255,255,.08);
+      padding: 8px 12px; border-radius: 12px; font-weight: 600; letter-spacing: .02em;
+      display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.25);
+      -webkit-tap-highlight-color: transparent;
+    }
+    #hud .btn:active { transform: translateY(1px); }
+    #hud .pill { padding: 8px 10px; border-radius: 999px; background: rgba(255,255,255,.06); font-variant-numeric: tabular-nums; }
+    #toast { position: fixed; inset: auto 0 18% 0; text-align: center; font-weight: 800; letter-spacing: .04em; font-size: clamp(20px, 4vw, 40px); pointer-events: none; }
+    #canvas { display:block; width:100vw; height:100vh; touch-action: none; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <button id="btnReset" class="btn">リセット</button>
+    <button id="btnNext" class="btn">次のレベル</button>
+    <div id="level" class="pill">LV 1</div>
+    <div id="time" class="pill">00:00</div>
+  </div>
+  <div id="toast"></div>
+  <canvas id="canvas"></canvas>
+
+  <script>
+  (()=>{
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const hudLevel = document.getElementById('level');
+    const hudTime = document.getElementById('time');
+    const btnReset = document.getElementById('btnReset');
+    const btnNext = document.getElementById('btnNext');
+    const toast = document.getElementById('toast');
+
+    // === Background image (embedded as data URL) ===
+    const bg = new Image();
+    bg.decoding = 'async';
+    bg.src = 'data:image/png;base64,${b64}';
+
+    function fitCanvas(){
+      const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+      const w = Math.floor(window.innerWidth);
+      const h = Math.floor(window.innerHeight);
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    }
+    fitCanvas();
+    window.addEventListener('resize', fitCanvas);
+
+    let level = 1;
+    let startedAt = performance.now();
+
+    const world = {
+      width: () => canvas.clientWidth,
+      height: () => canvas.clientHeight,
+      holeR: 26,
+    };
+
+    const rng = (min, max)=> Math.random()*(max-min)+min;
+
+    // Ball size 4x original (r = 40)
+    const ball = { x: 120, y: 120, r: 40, vx: 60, vy: 35 };
+
+    // Single draggable bar
+    let walls = [];
+
+    function makeLevel(){
+      const W = world.width(), H = world.height();
+      ball.x = rng(40, 80);
+      ball.y = rng(40, 80);
+      const speed = 70 + (level-1)*12;
+      const ang = rng(0, Math.PI*2);
+      ball.vx = Math.cos(ang) * speed;
+      ball.vy = Math.sin(ang) * speed;
+
+      const w = Math.min(240, Math.max(150, W * 0.4));
+      const h = 28;
+      const x = W/2 - w/2;
+      const y = H - 120;
+      walls = [{ x, y, w, h, id:0, draggable:true }];
+
+      startedAt = performance.now();
+      hudLevel.textContent = `LV ${level}`;
+    }
+
+    function resetLevel(){ makeLevel(); }
+
+    let dragId = null;
+    let dragOffset = {x:0, y:0};
+
+    function posFromEvent(e){
+      if (e.touches && e.touches.length){
+        const t = e.touches[0];
+        return { x: t.clientX, y: t.clientY };
+      }
+      return { x: e.clientX, y: e.clientY };
+    }
+
+    function onDown(e){
+      const p = posFromEvent(e);
+      const w = walls[0];
+      if (p.x>=w.x && p.x<=w.x+w.w && p.y>=w.y && p.y<=w.y+w.h){
+        dragId = w.id;
+        dragOffset.x = p.x - w.x;
+        dragOffset.y = p.y - w.y;
+      }
+      e.preventDefault();
+    }
+    function onMove(e){
+      if (dragId===null) return;
+      const p = posFromEvent(e);
+      const w = walls[0];
+      w.x = Math.min(world.width()-w.w, Math.max(0, p.x - dragOffset.x));
+      w.y = Math.min(world.height()-w.h, Math.max(0, p.y - dragOffset.y));
+      e.preventDefault();
+    }
+    function onUp(e){ dragId = null; e.preventDefault(); }
+
+    canvas.addEventListener('touchstart', onDown, {passive:false});
+    canvas.addEventListener('touchmove', onMove, {passive:false});
+    canvas.addEventListener('touchend', onUp, {passive:false});
+    canvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+
+    function circleRectCollide(cx, cy, cr, rx, ry, rw, rh){
+      const closestX = Math.max(rx, Math.min(cx, rx+rw));
+      const closestY = Math.max(ry, Math.min(cy, ry+rh));
+      const dx = cx - closestX; const dy = cy - closestY;
+      const dist2 = dx*dx + dy*dy;
+      return dist2 <= cr*cr ? true : false;
+    }
+
+    function reflectOnRect(ball, rect){
+      const {x:cx,y:cy,r:cr} = ball;
+      const {x:rx,y:ry,w:rw,h:rh} = rect;
+      const penLeft = Math.abs((cx+cr) - rx);
+      const penRight = Math.abs((rx+rw) - (cx-cr));
+      const penTop = Math.abs((cy+cr) - ry);
+      const penBottom = Math.abs((ry+rh) - (cy-cr));
+      const minPen = Math.min(penLeft, penRight, penTop, penBottom);
+      const restitution = 0.98;
+      if (minPen === penLeft) {
+        ball.x = rx - cr; ball.vx = -Math.abs(ball.vx) * restitution;
+      } else if (minPen === penRight) {
+        ball.x = rx + rw + cr; ball.vx = Math.abs(ball.vx) * restitution;
+      } else if (minPen === penTop) {
+        ball.y = ry - cr; ball.vy = -Math.abs(ball.vy) * restitution;
+      } else {
+        ball.y = ry + rh + cr; ball.vy = Math.abs(ball.vy) * restitution;
+      }
+    }
+
+    let last = performance.now();
+    let win = false;
+
+    function update(dt){
+      if (win) return;
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+
+      if (ball.x - ball.r < 0){ ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
+      if (ball.x + ball.r > world.width()){ ball.x = world.width() - ball.r; ball.vx = -Math.abs(ball.vx); }
+      if (ball.y - ball.r < 0){ ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
+      if (ball.y + ball.r > world.height()){ ball.y = world.height() - ball.r; ball.vy = -Math.abs(ball.vy); }
+
+      const w = walls[0];
+      if (circleRectCollide(ball.x, ball.y, ball.r, w.x, w.y, w.w, w.h)){
+        reflectOnRect(ball, w);
+      }
+
+      const hx = world.width()/2, hy = world.height()/2; const hr = world.holeR;
+      const dx = ball.x - hx, dy = ball.y - hy; const d2 = dx*dx + dy*dy;
+      if (d2 < (hr * hr)){
+        win = true;
+        ball.vx = ball.vy = 0;
+        toast.textContent = 'キター！🎉 クリア';
+        setTimeout(()=> toast.textContent='', 1600);
+      }
+
+      const t = Math.floor((performance.now() - startedAt)/1000);
+      const mm = String(Math.floor(t/60)).padStart(2,'0');
+      const ss = String(t%60).padStart(2,'0');
+      hudTime.textContent = `${mm}:${ss}`;
+    }
+
+    function drawBackground(W,H){
+      if (bg && bg.complete && bg.naturalWidth){
+        const iw = bg.naturalWidth, ih = bg.naturalHeight;
+        const s = Math.max(W/iw, H/ih);
+        const dw = iw*s, dh = ih*s;
+        const dx = (W - dw)/2, dy = (H - dh)/2;
+        ctx.drawImage(bg, dx, dy, dw, dh);
+      } else {
+        // fallback plain color
+        ctx.fillStyle = '#0b1020';
+        ctx.fillRect(0,0,W,H);
+      }
+    }
+
+    function draw(){
+      const W = world.width(), H = world.height();
+      drawBackground(W,H);
+
+      // hole (center)
+      const hx = W/2, hy = H/2, hr = world.holeR;
+      const grad = ctx.createRadialGradient(hx,hy,2, hx,hy,hr);
+      grad.addColorStop(0,'rgba(0,0,0,0.9)'); grad.addColorStop(1,'rgba(0,0,0,1)');
+      ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(hx,hy,hr,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle = 'rgba(103,232,249,0.4)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(hx,hy,hr+2,0,Math.PI*2); ctx.stroke();
+
+      const w = walls[0];
+      ctx.fillStyle = 'rgba(31,36,64,0.9)';
+      ctx.strokeStyle = 'rgba(59,70,119,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(w.x, w.y, w.w, w.h, 14);
+      ctx.fill(); ctx.stroke();
+
+      // ball shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.beginPath(); ctx.ellipse(ball.x+4, ball.y+6, ball.r*0.9, ball.r*0.6, 0, 0, Math.PI*2); ctx.fill();
+      // ball
+      const g2 = ctx.createRadialGradient(ball.x-ball.r*0.4, ball.y-ball.r*0.4, 2, ball.x, ball.y, ball.r);
+      g2.addColorStop(0, '#a7f3d0');
+      g2.addColorStop(1, '#10b981');
+      ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(ball.x-ball.r*0.5, ball.y-ball.r*0.5, ball.r*0.25, 0, Math.PI*2); ctx.fill();
+
+      if (!win){
+        ctx.globalAlpha = 0.85; ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.font = '600 14px system-ui, -apple-system, Segoe UI, Roboto';
+        ctx.fillText('バーをドラッグで動かして、中心の穴に入れよう！', 12, H-16);
+        ctx.globalAlpha = 1;
+      }
+
+      if (win){
+        ctx.font = '800 24px system-ui,-apple-system';
+        ctx.fillStyle = '#e9ecf5';
+        ctx.textAlign = 'center';
+        ctx.fillText('クリア！ 次のレベルで続行できます', W/2, 64);
+        ctx.textAlign = 'start';
+      }
+    }
+
+    function loop(ts){
+      const dt = Math.min(0.032, (ts - last)/1000);
+      last = ts;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    btnReset.addEventListener('click', ()=>{ win=false; resetLevel(); });
+    btnNext.addEventListener('click', ()=>{
+      level = Math.min(99, level+1);
+      world.holeR = Math.max(16, 26 - Math.floor(level/3));
+      win=false; resetLevel();
+    });
+
+    resetLevel();
+  })();
+  </script>
+</body>
+</html>
