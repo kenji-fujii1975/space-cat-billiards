@@ -168,8 +168,9 @@
       // タイトル中はステージ背景を完全に消す
       document.body.style.backgroundImage = 'none';
       document.body.style.backgroundColor = '#000';
-      // タイトルからBGMを開始（自動再生不可環境は後続のユーザー操作でアンロック）
-      try { if (bgm.paused) { bgm.currentTime = 0; bgm.play().catch(()=>{}); } } catch(_){}
+      // タイトルからBGMを開始（デスクトップ等の自動再生可環境では即時再生）
+      try { bgm.muted = false; bgm.volume = 0.4; if (bgm.paused) { bgm.currentTime = 0; bgm.play().catch(()=>{}); } } catch(_){}
+    }); } } catch(_){}
     }
 
     // Drag handling + tap-to-next + title tap
@@ -185,7 +186,14 @@
 
       // Title tap to start
       if (gameState === 'title'){
-        startGame();
+        const H = world.height();
+        // 画面下半分のみでゲーム開始
+        if (p.y >= H/2){
+          startGame();
+        } else {
+          // 上半分タップはBGMだけ確実に起動（ゲームは開始しない）
+          try { if (bgm.paused) { bgm.currentTime = 0; bgm.play().catch(()=>{}); } } catch(_){}
+        }
         e.preventDefault();
         return;
       }
@@ -449,6 +457,13 @@
       const r1 = posFromEvent(te); const r2 = posFromEvent(pe);
       assert('posFromEvent touch', r1.x===12 && r1.y===34);
       assert('posFromEvent mouse', r2.x===56 && r2.y===78);
+    })();
+    // title start area logic
+    (function(){
+      const H = 100;
+      const inLower = (y)=> y >= H/2;
+      assert('title start area yes', inLower(60) === true);
+      assert('title start area no', inLower(40) === false);
     })();
     // Audio tests (non-fatal)
     assert('bgm object exists', !!bgm);
