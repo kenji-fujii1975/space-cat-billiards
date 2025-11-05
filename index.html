@@ -34,19 +34,22 @@
 
     // ===== State =====
     function fit(){ canvas.width = innerWidth; canvas.height = innerHeight; } fit(); addEventListener('resize', fit);
-    const world = { width:()=>canvas.width, height:()=>canvas.height, holeR:34 }; // 少し広げて吸い込みやすく
+    const world = { width:()=>canvas.width, height:()=>canvas.height, holeR:34 };
     let level=1; const clampLevel=n=>Math.min(3, Math.max(1,n));
     let gameState='title'; // 'title' | 'play' | 'ending'
 
     // ball
     const ball={ x:120, y:120, r:80, vx:60, vy:35, rotation:0 };
     const IMG_SCALE=0.7, SPEED_SCALE=0.5, ROT_SPEED=0.25;
-    // 吸い込み強化調整（より自動で入る）
-    const CAPTURE_MARGIN = 0.85;           // 捕獲半径に足す割合（大きいほど即ゴール）
-    const SUCTION_DIST_MULT = 3.0;         // 吸引をかけ始める距離（holeRの何倍）
-    const SUCTION_STRENGTH = 220;          // 吸引加速度（px/s^2）
-    const SUCTION_DAMPING = 0.85;          // 吸引中の速度減衰（0-1）
-    const SUCTION_SKIP_COLLIDE = 0.9;      // 吸引中、穴の近場では壁反射をスキップ
+    // 吸い込み・捕獲を強化
+    const CAPTURE_MARGIN = 0.95;           // 捕獲半径に足す割合（広め）
+    const SUCTION_DIST_MULT = 3.5;         // 吸引をかけ始める距離（holeRの何倍）
+    const SUCTION_STRENGTH = 320;          // 吸引加速度（px/s^2）
+    const TANGENTIAL_DAMP = 0.6;           // 接線方向の減衰（小さいほど回り込みにくい）
+    const SUCTION_SKIP_COLLIDE = 1.0;      // 吸引域では壁反射スキップ
+    const MIN_INWARD_SPEED = 120;          // 最小内向き速度(px/s)
+    const MAX_INWARD_SPEED = 280;          // 最大内向き速度(px/s)
+    const VEL_CAPTURE_THRESH = 80;         // 低速捕獲の速度閾値(px/s)
 
     let walls=[]; let win=false, goalAnim=0, goal=null, postWinHandled=false;
 
@@ -154,25 +157,38 @@
       const suctionR = Math.max(captureR, hr*SUCTION_DIST_MULT);
       const suctionActive = dist < suctionR;
 
-      // 吸引（速度を中心方向へ寄せ、減衰もかける）
+      // 吸引（半径方向を強化・接線を減衰）
       if (suctionActive && dist >= captureR){
         const nx = (hx - ball.x) / (dist || 1);
         const ny = (hy - ball.y) / (dist || 1);
-        ball.vx = (ball.vx + nx * SUCTION_STRENGTH * dt) * SUCTION_DAMPING;
-        ball.vy = (ball.vy + ny * SUCTION_STRENGTH * dt) * SUCTION_DAMPING;
+        const tx = -ny, ty = nx; // 接線
+        const vr = ball.vx * nx + ball.vy * ny; // 半径（内向き+）
+        const vt = ball.vx * tx + ball.vy * ty; // 接線
+        const k = 1 - Math.min(1, Math.max(0, (dist - captureR) / (suctionR - captureR)));
+        const targetRadial = MIN_INWARD_SPEED + k * (MAX_INWARD_SPEED - MIN_INWARD_SPEED);
+        const newVr = Math.max(vr + SUCTION_STRENGTH * dt, targetRadial);
+        const newVt = vt * TANGENTIAL_DAMP;
+        ball.vx = newVr * nx + newVt * tx;
+        ball.vy = newVr * ny + newVt * ty;
       }
 
-      // 壁との衝突（強い吸引域ではスキップしてすり抜けを促す）
+      // 速度が小さく近いなら捕獲
+      const speed = Math.hypot(ball.vx, ball.vy);
+      if (dist < captureR * 1.15 && speed < VEL_CAPTURE_THRESH){
+        win=true; goalAnim=0; goal={hx,hy,sx:ball.x,sy:ball.y}; ball.vx=0; ball.vy=0;
+      }
+
+      // 壁との衝突（吸引域ではスキップ）
       const w=walls[0];
       if(w){
-        const nearForSkip = dist < (hr * SUCTION_DIST_MULT * SUCTION_SKIP_COLLIDE);
+        const nearForSkip = suctionActive && dist < (hr * SUCTION_DIST_MULT * SUCTION_SKIP_COLLIDE);
         if (!nearForSkip && circleRectCollide(ball.x,ball.y,ball.r,w.x,w.y,w.w,w.h)){
           reflectOnRect(ball,w);
         }
       }
 
       // ゴール判定（広め）
-      if (dist < captureR){
+      if (!win && dist < captureR){
         win=true; 
         goalAnim=0; 
         goal={hx,hy,sx:ball.x,sy:ball.y}; 
