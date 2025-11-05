@@ -40,6 +40,10 @@
     topImg.decoding = 'async';
     topImg.src = 'top.png';
 
+    const endImg = new Image();
+    endImg.decoding = 'async';
+    endImg.src = 'end.png';
+
     const hitBase = new Audio('cat.mp3');
     hitBase.preload = 'auto';
 
@@ -103,11 +107,12 @@
       }catch(e){}
     }
 
-    let catReady=false, catError=false, zabutonReady=false, topReady=false;
+    let catReady=false, catError=false, zabutonReady=false, topReady=false, endReady=false;
     catImg.onload=()=>{catReady = catImg.naturalWidth>0 && catImg.naturalHeight>0;};
     catImg.onerror=()=>{catError=true;};
     zabutonImg.onload=()=>{zabutonReady=true;};
     topImg.onload=()=>{topReady=true;};
+    endImg.onload=()=>{endReady=true;};
 
     function fitCanvas(){ canvas.width=window.innerWidth; canvas.height=window.innerHeight; }
     fitCanvas(); window.addEventListener('resize', fitCanvas);
@@ -137,6 +142,7 @@
     // Game state
     // 'title' -> waiting tap with top.png
     // 'play'  -> gameplay
+    // 'ending' -> show end.png and wait for tap to return title
     let gameState = 'title';
 
     function setMessage(t, type){
@@ -183,11 +189,12 @@
     function goTitle(){
       gameState = 'title';
       level = 1;
-      awaitingTap = false; msgText = ''; msgType = null; msgRect = null;
+      awaitingTap = false; msgText = ''; msgType = null; msgRect = null; win=false; postWinHandled=false; goal=null; goalAnim=0;
       // タイトル中はステージ背景を完全に消す
       document.body.style.backgroundImage = 'none';
       document.body.style.backgroundColor = '#000';
-      // ⚠️ iOS/Safariの自動再生制限対策: ここではBGMを再生しない（ユーザー操作でのみ開始）
+      // タイトルではBGMは鳴らさない
+      try { if (!bgm.paused) { bgm.pause(); } } catch(_){}
     }); } } catch(_){}
     }); } } catch(_){}
     }
@@ -205,13 +212,42 @@
 
       // Title tap to start
       if (gameState === 'title'){
-        const H = world.height();
-        // まずBGMだけは必ず起動を試みる（上半分タップでも）
-        safeStartBgm();
-        // 画面下半分のみでゲーム開始
-        if (p.y >= H/2){
-          startGame();
+        // draw top.png centered with contain
+        if (topReady && topImg.naturalWidth>0){
+          const iw = topImg.naturalWidth, ih = topImg.naturalHeight;
+          const s = Math.min(W/iw, H/ih);
+          const dw = iw*s, dh = ih*s;
+          const dx = (W-dw)/2, dy = (H-dh)/2;
+          ctx.drawImage(topImg, dx, dy, dw, dh);
+        } else {
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0,0,W,H);
         }
+        msgRect = null; // not used on title
+        return;
+      }
+
+      if (gameState === 'ending'){
+        if (endReady && endImg.naturalWidth>0){
+          const iw = endImg.naturalWidth, ih = endImg.naturalHeight;
+          const s = Math.min(W/iw, H/ih);
+          const dw = iw*s, dh = ih*s;
+          const dx = (W-dw)/2, dy = (H-dh)/2;
+          ctx.drawImage(endImg, dx, dy, dw, dh);
+        } else {
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0,0,W,H);
+        }
+        return;
+      }) { bgm.currentTime = 0; bgm.play().catch(()=>{}); } } catch(_){}
+        }
+        e.preventDefault();
+        return;
+      }
+
+      // Ending tap to title
+      if (gameState === 'ending'){
+        goTitle();
         e.preventDefault();
         return;
       }
@@ -329,6 +365,11 @@
           if (level < 3){
             setMessage('NEXT STAGE!', 'next');
           } else {
+            // move to ending screen (no message overlay)
+            msgText=''; msgType=null; awaitingTap=false; msgRect=null;
+            gameState = 'ending';
+          }
+        } else {
             setMessage('Congratulations!', 'congratsTap');
           }
         }
@@ -487,4 +528,4 @@
     assert('bgm object exists', !!bgm);
     assert('bgm loop enabled', bgm.loop === true);
     assert('sfx object exists', !!hitBase);
-    assert('safeStartBgm exists', typeof safeStartBgm === 'function');
+    assert('end image exists var', typeof endImg === 'object');
