@@ -5,32 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>WallSlide Pool</title>
   <style>
-    :root {
-      --bg: #0f1220;
-      --panel: #171a2a;
-      --ink: #e9ecf5;
-      --accent: #67e8f9;
-      --accent-2: #a7f3d0;
-    }
     html, body {
-      margin: 0; height: 100%; background: var(--bg); color: var(--ink);
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Apple Color Emoji", "Segoe UI Emoji";
+      margin: 0; height: 100%; overflow: hidden;
+    }
+    body {
+      background: url('back.png') center center / cover no-repeat fixed;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP";
     }
     #hud {
-      position: fixed; inset: 0 auto auto 0; padding: 10px 12px; z-index: 10; display: flex; gap: 8px; align-items: center;
-      background: linear-gradient(90deg, rgba(15,18,32,0.9), rgba(15,18,32,0.0));
-      border-bottom-right-radius: 12px;
-      user-select: none; -webkit-user-select: none;
+      position: fixed; top: 0; left: 0; width: 100%; display: flex; gap: 8px; align-items: center; justify-content: center;
+      background: rgba(0, 0, 0, 0.5); color: white; padding: 10px; z-index: 10;
     }
     #hud .btn {
-      background: var(--panel); color: var(--ink); border: 1px solid rgba(255,255,255,.08);
-      padding: 8px 12px; border-radius: 12px; font-weight: 600; letter-spacing: .02em;
-      display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.25);
-      -webkit-tap-highlight-color: transparent;
+      background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3);
+      padding: 8px 12px; border-radius: 10px; font-weight: 600;
     }
     #hud .btn:active { transform: translateY(1px); }
-    #hud .pill { padding: 8px 10px; border-radius: 999px; background: rgba(255,255,255,.06); font-variant-numeric: tabular-nums; }
-    #toast { position: fixed; inset: auto 0 18% 0; text-align: center; font-weight: 800; letter-spacing: .04em; font-size: clamp(20px, 4vw, 40px); pointer-events: none; }
+    #hud .pill { padding: 8px 10px; border-radius: 999px; background: rgba(255,255,255,.2); font-variant-numeric: tabular-nums; }
     #canvas { display:block; width:100vw; height:100vh; touch-action: none; }
   </style>
 </head>
@@ -41,31 +32,22 @@
     <div id="level" class="pill">LV 1</div>
     <div id="time" class="pill">00:00</div>
   </div>
-  <div id="toast"></div>
   <canvas id="canvas"></canvas>
 
   <script>
   (()=>{
     const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d');
     const hudLevel = document.getElementById('level');
     const hudTime = document.getElementById('time');
     const btnReset = document.getElementById('btnReset');
     const btnNext = document.getElementById('btnNext');
-    const toast = document.getElementById('toast');
-
-    // === Background image (embedded as data URL) ===
-    const bg = new Image();
-    bg.decoding = 'async';
-    bg.src = 'data:image/png;base64,${b64}';
 
     function fitCanvas(){
-      const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-      const w = Math.floor(window.innerWidth);
-      const h = Math.floor(window.innerHeight);
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
-      ctx.setTransform(dpr,0,0,dpr,0,0);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = w;
+      canvas.height = h;
     }
     fitCanvas();
     window.addEventListener('resize', fitCanvas);
@@ -74,17 +56,14 @@
     let startedAt = performance.now();
 
     const world = {
-      width: () => canvas.clientWidth,
-      height: () => canvas.clientHeight,
+      width: () => canvas.width,
+      height: () => canvas.height,
       holeR: 26,
     };
 
     const rng = (min, max)=> Math.random()*(max-min)+min;
 
-    // Ball size 4x original (r = 40)
     const ball = { x: 120, y: 120, r: 40, vx: 60, vy: 35 };
-
-    // Single draggable bar
     let walls = [];
 
     function makeLevel(){
@@ -96,8 +75,7 @@
       ball.vx = Math.cos(ang) * speed;
       ball.vy = Math.sin(ang) * speed;
 
-      const w = Math.min(240, Math.max(150, W * 0.4));
-      const h = 28;
+      const w = 200, h = 25;
       const x = W/2 - w/2;
       const y = H - 120;
       walls = [{ x, y, w, h, id:0, draggable:true }];
@@ -150,8 +128,7 @@
       const closestX = Math.max(rx, Math.min(cx, rx+rw));
       const closestY = Math.max(ry, Math.min(cy, ry+rh));
       const dx = cx - closestX; const dy = cy - closestY;
-      const dist2 = dx*dx + dy*dy;
-      return dist2 <= cr*cr ? true : false;
+      return dx*dx + dy*dy <= cr*cr;
     }
 
     function reflectOnRect(ball, rect){
@@ -188,17 +165,14 @@
       if (ball.y + ball.r > world.height()){ ball.y = world.height() - ball.r; ball.vy = -Math.abs(ball.vy); }
 
       const w = walls[0];
-      if (circleRectCollide(ball.x, ball.y, ball.r, w.x, w.y, w.w, w.h)){
-        reflectOnRect(ball, w);
-      }
+      if (circleRectCollide(ball.x, ball.y, ball.r, w.x, w.y, w.w, w.h)) reflectOnRect(ball, w);
 
       const hx = world.width()/2, hy = world.height()/2; const hr = world.holeR;
       const dx = ball.x - hx, dy = ball.y - hy; const d2 = dx*dx + dy*dy;
       if (d2 < (hr * hr)){
         win = true;
         ball.vx = ball.vy = 0;
-        toast.textContent = 'キター！🎉 クリア';
-        setTimeout(()=> toast.textContent='', 1600);
+        alert('クリア！🎉');
       }
 
       const t = Math.floor((performance.now() - startedAt)/1000);
@@ -207,63 +181,21 @@
       hudTime.textContent = `${mm}:${ss}`;
     }
 
-    function drawBackground(W,H){
-      if (bg && bg.complete && bg.naturalWidth){
-        const iw = bg.naturalWidth, ih = bg.naturalHeight;
-        const s = Math.max(W/iw, H/ih);
-        const dw = iw*s, dh = ih*s;
-        const dx = (W - dw)/2, dy = (H - dh)/2;
-        ctx.drawImage(bg, dx, dy, dw, dh);
-      } else {
-        // fallback plain color
-        ctx.fillStyle = '#0b1020';
-        ctx.fillRect(0,0,W,H);
-      }
-    }
-
     function draw(){
       const W = world.width(), H = world.height();
-      drawBackground(W,H);
+      ctx.clearRect(0,0,W,H);
 
-      // hole (center)
       const hx = W/2, hy = H/2, hr = world.holeR;
-      const grad = ctx.createRadialGradient(hx,hy,2, hx,hy,hr);
-      grad.addColorStop(0,'rgba(0,0,0,0.9)'); grad.addColorStop(1,'rgba(0,0,0,1)');
-      ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(hx,hy,hr,0,Math.PI*2); ctx.fill();
-      ctx.strokeStyle = 'rgba(103,232,249,0.4)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(hx,hy,hr+2,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle = 'rgba(0,0,0,0.8)';
+      ctx.beginPath(); ctx.arc(hx,hy,hr,0,Math.PI*2); ctx.fill();
 
       const w = walls[0];
-      ctx.fillStyle = 'rgba(31,36,64,0.9)';
-      ctx.strokeStyle = 'rgba(59,70,119,0.9)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(w.x, w.y, w.w, w.h, 14);
-      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(0,255,255,0.4)';
+      ctx.beginPath(); ctx.roundRect(w.x, w.y, w.w, w.h, 10);
+      ctx.fill();
 
-      // ball shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.4)';
-      ctx.beginPath(); ctx.ellipse(ball.x+4, ball.y+6, ball.r*0.9, ball.r*0.6, 0, 0, Math.PI*2); ctx.fill();
-      // ball
-      const g2 = ctx.createRadialGradient(ball.x-ball.r*0.4, ball.y-ball.r*0.4, 2, ball.x, ball.y, ball.r);
-      g2.addColorStop(0, '#a7f3d0');
-      g2.addColorStop(1, '#10b981');
-      ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(ball.x-ball.r*0.5, ball.y-ball.r*0.5, ball.r*0.25, 0, Math.PI*2); ctx.fill();
-
-      if (!win){
-        ctx.globalAlpha = 0.85; ctx.fillStyle = 'rgba(255,255,255,0.9)';
-        ctx.font = '600 14px system-ui, -apple-system, Segoe UI, Roboto';
-        ctx.fillText('バーをドラッグで動かして、中心の穴に入れよう！', 12, H-16);
-        ctx.globalAlpha = 1;
-      }
-
-      if (win){
-        ctx.font = '800 24px system-ui,-apple-system';
-        ctx.fillStyle = '#e9ecf5';
-        ctx.textAlign = 'center';
-        ctx.fillText('クリア！ 次のレベルで続行できます', W/2, 64);
-        ctx.textAlign = 'start';
-      }
+      ctx.fillStyle = '#00ff88';
+      ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
     }
 
     function loop(ts){
@@ -276,11 +208,7 @@
     requestAnimationFrame(loop);
 
     btnReset.addEventListener('click', ()=>{ win=false; resetLevel(); });
-    btnNext.addEventListener('click', ()=>{
-      level = Math.min(99, level+1);
-      world.holeR = Math.max(16, 26 - Math.floor(level/3));
-      win=false; resetLevel();
-    });
+    btnNext.addEventListener('click', ()=>{ level++; win=false; resetLevel(); });
 
     resetLevel();
   })();
