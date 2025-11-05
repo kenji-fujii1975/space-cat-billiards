@@ -57,12 +57,31 @@
     // Audio unlock on first gesture (iOS)
     let audioUnlocked = false;
     let lastHitAt = 0;
+    function safeStartBgm(){
+      try {
+        bgm.muted = false; bgm.volume = 0.4;
+        if (bgm.paused) { bgm.currentTime = 0; }
+        const p = bgm.play();
+        if (p && typeof p.catch === 'function') p.catch(()=>{});
+      } catch(_){}
+    }
+
     function unlockAudioOnce(){
       if (audioUnlocked) return;
       const unlocks = [];
       hitBase.volume = 0;
       unlocks.push(
         hitBase.play().then(()=>{ hitBase.pause(); hitBase.currentTime = 0; hitBase.volume = 1; })
+      );
+      // BGMはユーザー操作のスタック上で起動
+      unlocks.push(
+        (async()=>{ safeStartBgm(); })()
+      );
+      Promise.allSettled(unlocks).finally(()=>{ audioUnlocked = true; });
+    }
+    window.addEventListener('touchstart', unlockAudioOnce, {passive:false});
+    window.addEventListener('mousedown', unlockAudioOnce);
+    if (window.PointerEvent) window.addEventListener('pointerdown', unlockAudioOnce, {passive:false}); hitBase.currentTime = 0; hitBase.volume = 1; })
       );
       unlocks.push(
         bgm.play().then(()=>{ bgm.muted = false; bgm.volume = 0.4; }).catch(()=>{})
@@ -168,8 +187,8 @@
       // タイトル中はステージ背景を完全に消す
       document.body.style.backgroundImage = 'none';
       document.body.style.backgroundColor = '#000';
-      // タイトルからBGMを開始（デスクトップ等の自動再生可環境では即時再生）
-      try { bgm.muted = false; bgm.volume = 0.4; if (bgm.paused) { bgm.currentTime = 0; bgm.play().catch(()=>{}); } } catch(_){}
+      // ⚠️ iOS/Safariの自動再生制限対策: ここではBGMを再生しない（ユーザー操作でのみ開始）
+    }); } } catch(_){}
     }); } } catch(_){}
     }
 
@@ -187,12 +206,11 @@
       // Title tap to start
       if (gameState === 'title'){
         const H = world.height();
+        // まずBGMだけは必ず起動を試みる（上半分タップでも）
+        safeStartBgm();
         // 画面下半分のみでゲーム開始
         if (p.y >= H/2){
           startGame();
-        } else {
-          // 上半分タップはBGMだけ確実に起動（ゲームは開始しない）
-          try { if (bgm.paused) { bgm.currentTime = 0; bgm.play().catch(()=>{}); } } catch(_){}
         }
         e.preventDefault();
         return;
@@ -469,7 +487,4 @@
     assert('bgm object exists', !!bgm);
     assert('bgm loop enabled', bgm.loop === true);
     assert('sfx object exists', !!hitBase);
-  })();
-  </script>
-</body>
-</html>
+    assert('safeStartBgm exists', typeof safeStartBgm === 'function');
