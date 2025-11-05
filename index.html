@@ -61,9 +61,12 @@
       if (audioUnlocked) return;
       const unlocks = [];
       hitBase.volume = 0;
-      unlocks.push(hitBase.play().then(()=>{ hitBase.pause(); hitBase.currentTime = 0; hitBase.volume = 1; }));
-      // BGMを確実に起動・ミュート解除
-      unlocks.push(bgm.play().then(()=>{ bgm.muted = false; bgm.volume = 0.4; }).catch(()=>{}));
+      unlocks.push(
+        hitBase.play().then(()=>{ hitBase.pause(); hitBase.currentTime = 0; hitBase.volume = 1; })
+      );
+      unlocks.push(
+        bgm.play().then(()=>{ bgm.muted = false; bgm.volume = 0.4; }).catch(()=>{})
+      );
       Promise.allSettled(unlocks).finally(()=>{ audioUnlocked = true; });
     }
     window.addEventListener('touchstart', unlockAudioOnce, {passive:false});
@@ -167,7 +170,6 @@
       document.body.style.backgroundColor = '#000';
       // タイトルからBGMを開始（自動再生不可環境は後続のユーザー操作でアンロック）
       try { if (bgm.paused) { bgm.currentTime = 0; bgm.play().catch(()=>{}); } } catch(_){}
-    }); } catch(_){}
     }
 
     // Drag handling + tap-to-next + title tap
@@ -176,7 +178,7 @@
       if (e.touches && e.touches.length){ const t = e.touches[0]; return {x:t.clientX, y:t.clientY}; }
       if (e.changedTouches && e.changedTouches.length){ const t = e.changedTouches[0]; return {x:t.clientX, y:t.clientY}; }
       return {x:e.clientX, y:e.clientY};
-    };} return{x:e.clientX,y:e.clientY}; }
+    }
 
     function onDown(e){
       const p=posFromEvent(e);
@@ -195,7 +197,6 @@
           if (msgType === 'next'){
             level = clampLevel(level + 1);
           } else if (msgType === 'congratsTap'){
-            // back to title or stage1? -> spec says stage1 restart
             level = 1; gameState = 'play';
           }
           awaitingTap = false; msgText = ''; msgType = null; msgRect = null;
