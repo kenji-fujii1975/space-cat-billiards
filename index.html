@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>WallSlide Pool</title>
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; }
+    html, body { margin: 0; height: 100%; overflow: hidden; touch-action: none; }
     /* タイトル画面でステージ背景が見えないように初期は黒のみ */
     body {
       background-color: #000;
@@ -160,11 +160,14 @@
 
     function goTitle(){
       gameState = 'title';
+      level = 1;
+      awaitingTap = false; msgText = ''; msgType = null; msgRect = null;
       // タイトル中はステージ背景を完全に消す
       document.body.style.backgroundImage = 'none';
       document.body.style.backgroundColor = '#000';
-      // タイトルからBGMを開始（モバイルではジェスチャーまで無音/失敗する可能性あり）
-      try { bgm.currentTime = 0; bgm.play().catch(()=>{}); } catch(_){}
+      // タイトルからBGMを開始（自動再生不可環境は後続のユーザー操作でアンロック）
+      try { if (bgm.paused) { bgm.currentTime = 0; bgm.play().catch(()=>{}); } } catch(_){}
+    }); } catch(_){}
     }
 
     // Drag handling + tap-to-next + title tap
@@ -225,6 +228,7 @@
     canvas.addEventListener('touchmove', onMove, {passive:false});
     canvas.addEventListener('touchend', onUp, {passive:false});
     canvas.addEventListener('mousedown', onDown);
+    canvas.addEventListener('click', onDown); // Safari の click 発火対策
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     // Pointer Events (Safari/iOS含む幅広い端末向け)
