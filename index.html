@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>WallSlide Pool</title>
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; }
+    html, body {
+      background: #000; /* タイトル画面でステージ背景が見えないように初期は黒 */
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP";
+    }
     body {
       background: url('back.png') center center / cover no-repeat fixed;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP";
@@ -118,7 +121,13 @@
       let url = 'back.png';
       if (level === 2) url = 'back2.png';
       if (level === 3) url = 'back3.png';
+      document.body.style.backgroundColor = '#000';
       document.body.style.backgroundImage = `url('${url}')`;
+      document.body.style.backgroundPosition = 'center center';
+      document.body.style.backgroundRepeat = 'no-repeat';
+      document.body.style.backgroundSize = 'cover';
+      document.body.style.backgroundAttachment = 'fixed';
+    }')`;
     }
 
     function makeLevel(){
@@ -147,8 +156,9 @@
 
     function goTitle(){
       gameState = 'title';
-      // keep BGM running; background is back.png by default
-      document.body.style.backgroundImage = "url('back.png')";
+      // タイトル中はステージ背景を完全に消す
+      document.body.style.backgroundImage = 'none';
+      document.body.style.backgroundColor = '#000';
     }
 
     // Drag handling + tap-to-next + title tap
