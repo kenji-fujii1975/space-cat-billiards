@@ -44,16 +44,47 @@
     const btnNext = document.getElementById('btnNext');
     const statusEl = document.getElementById('status');
 
-    // --- Load images safely (avoid drawImage on broken image) ---
-    const catImg = new Image();
+    // === Assets ===
+    const catImg = new Image(); // ball texture
     catImg.decoding = 'async';
     catImg.src = 'catball.png';
+
+    const hitBase = new Audio('cat.mp3'); // collision sfx
+    hitBase.preload = 'auto';
+    let audioUnlocked = false;
+    let lastHitAt = 0;
+
+    function unlockAudioOnce(){
+      if (audioUnlocked) return;
+      // Attempt to unlock by starting & immediately pausing
+      hitBase.volume = 0;
+      hitBase.play().then(()=>{
+        hitBase.pause();
+        hitBase.currentTime = 0;
+        hitBase.volume = 1;
+        audioUnlocked = true;
+        window.removeEventListener('touchstart', unlockAudioOnce, {passive:false});
+        window.removeEventListener('mousedown', unlockAudioOnce);
+      }).catch(()=>{ /* ignore, will retry on next gesture */ });
+    }
+    window.addEventListener('touchstart', unlockAudioOnce, {passive:false});
+    window.addEventListener('mousedown', unlockAudioOnce);
+
+    function playHit(){
+      const now = performance.now();
+      if (now - lastHitAt < 120) return; // simple cooldown to avoid spam
+      lastHitAt = now;
+      try{
+        const a = hitBase.cloneNode();
+        a.volume = 0.9;
+        a.play().catch(()=>{});
+      }catch(e){}
+    }
 
     let catReady = false;
     let catError = false;
 
     catImg.addEventListener('load', () => {
-      // naturalWidth > 0 ensures not broken
       catReady = catImg.naturalWidth > 0 && catImg.naturalHeight > 0;
       statusEl.textContent = catReady ? 'assets: ok' : 'catball.png invalid';
     }, { once: true });
@@ -85,6 +116,7 @@
     const rng = (min, max)=> Math.random()*(max-min)+min;
 
     const ball = { x: 120, y: 120, r: 80, vx: 60, vy: 35, rotation: 0 };
+    const IMG_SCALE = 0.7; // ★ 画像の描画を70%に縮小
     let walls = [];
 
     function makeLevel(){
@@ -96,7 +128,8 @@
       ball.vx = Math.cos(ang) * speed;
       ball.vy = Math.sin(ang) * speed;
 
-      const w = 200, h = 25;
+      // Bar length to half (以前は ~200px)
+      const w = 100, h = 25;
       const x = W/2 - w/2;
       const y = H - 120;
       walls = [{ x, y, w, h, id:0, draggable:true }];
@@ -170,6 +203,7 @@
       } else {
         ball.y = ry + rh + cr; ball.vy = Math.abs(ball.vy) * restitution;
       }
+      playHit();
     }
 
     let last = performance.now();
@@ -181,10 +215,11 @@
       ball.y += ball.vy * dt;
       ball.rotation += dt * 0.5; // slow rotation
 
-      if (ball.x - ball.r < 0){ ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
-      if (ball.x + ball.r > world.width()){ ball.x = world.width() - ball.r; ball.vx = -Math.abs(ball.vx); }
-      if (ball.y - ball.r < 0){ ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
-      if (ball.y + ball.r > world.height()){ ball.y = world.height() - ball.r; ball.vy = -Math.abs(ball.vy); }
+      // Screen bounds (with hit sound)
+      if (ball.x - ball.r < 0){ ball.x = ball.r; ball.vx = Math.abs(ball.vx); playHit(); }
+      if (ball.x + ball.r > world.width()){ ball.x = world.width() - ball.r; ball.vx = -Math.abs(ball.vx); playHit(); }
+      if (ball.y - ball.r < 0){ ball.y = ball.r; ball.vy = Math.abs(ball.vy); playHit(); }
+      if (ball.y + ball.r > world.height()){ ball.y = world.height() - ball.r; ball.vy = -Math.abs(ball.vy); playHit(); }
 
       const w = walls[0];
       if (circleRectCollide(ball.x, ball.y, ball.r, w.x, w.y, w.w, w.h)) reflectOnRect(ball, w);
@@ -212,30 +247,29 @@
       ctx.fillStyle = 'rgba(0,0,0,0.8)';
       ctx.beginPath(); ctx.arc(hx,hy,hr,0,Math.PI*2); ctx.fill();
 
-      // draggable bar
+      // draggable bar (shorter)
       const w = walls[0];
       ctx.fillStyle = 'rgba(0,255,255,0.4)';
       ctx.beginPath(); ctx.roundRect(w.x, w.y, w.w, w.h, 10);
       ctx.fill();
 
-      // ball (image or placeholder)
+      // ball (image 70% scale or placeholder)
       if (catReady && !catError && catImg.naturalWidth > 0) {
         try {
           ctx.save();
           ctx.translate(ball.x, ball.y);
           ctx.rotate(ball.rotation);
-          ctx.drawImage(catImg, -ball.r, -ball.r, ball.r*2, ball.r*2);
+          const size = ball.r * 2 * IMG_SCALE;
+          ctx.drawImage(catImg, -size/2, -size/2, size, size);
           ctx.restore();
         } catch (e) {
-          // If drawImage still fails (rare), fallback to placeholder and mark error to avoid spamming.
           console.warn('drawImage failed, fallback to circle', e);
           catError = true;
         }
       }
       if (!catReady || catError) {
-        // placeholder circle
         ctx.fillStyle = '#10b981';
-        ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r * IMG_SCALE, 0, Math.PI*2); ctx.fill();
       }
     }
 
@@ -253,7 +287,7 @@
 
     resetLevel();
 
-    // --- Simple runtime tests (dev aid) ---
+    // --- Simple runtime tests ---
     function assert(name, cond){
       if (!assert.results) assert.results = [];
       assert.results.push({ name, pass: !!cond });
@@ -267,10 +301,8 @@
         statusEl.textContent = (catReady && !catError ? 'assets: ok' : statusEl.textContent) + ' | tests ok';
       }
     }
-    // Tests
     assert('canvas exists', !!canvas && !!ctx);
     assert('image object exists', !!catImg);
-    // If already loaded, naturalWidth>0; if not yet, this will be validated by onload handler.
     setTimeout(()=>{ assert('image valid or placeholder draws', catReady ? catImg.naturalWidth>0 : true); showTestResults(); }, 500);
   })();
   </script>
