@@ -56,7 +56,6 @@
 
     function unlockAudioOnce(){
       if (audioUnlocked) return;
-      // Attempt to unlock by starting & immediately pausing
       hitBase.volume = 0;
       hitBase.play().then(()=>{
         hitBase.pause();
@@ -65,14 +64,14 @@
         audioUnlocked = true;
         window.removeEventListener('touchstart', unlockAudioOnce, {passive:false});
         window.removeEventListener('mousedown', unlockAudioOnce);
-      }).catch(()=>{ /* ignore, will retry on next gesture */ });
+      }).catch(()=>{ /* ignore */ });
     }
     window.addEventListener('touchstart', unlockAudioOnce, {passive:false});
     window.addEventListener('mousedown', unlockAudioOnce);
 
     function playHit(){
       const now = performance.now();
-      if (now - lastHitAt < 120) return; // simple cooldown to avoid spam
+      if (now - lastHitAt < 120) return; // cooldown
       lastHitAt = now;
       try{
         const a = hitBase.cloneNode();
@@ -115,20 +114,30 @@
 
     const rng = (min, max)=> Math.random()*(max-min)+min;
 
+    // --- Ball state ---
     const ball = { x: 120, y: 120, r: 80, vx: 60, vy: 35, rotation: 0 };
-    const IMG_SCALE = 0.7; // ★ 画像の描画を70%に縮小
+    const IMG_SCALE = 0.7;                // 描画70%
+    const SPEED_SCALE = 0.5;              // ★ 移動速度を半分
+    const ROT_SPEED = 0.25;               // ★ 回転も半分（rad/s）
     let walls = [];
+
+    // Goal animation
+    let win = false;
+    let goalAnim = 0;                      // 0..1
+    const GOAL_ANIM_DUR = 0.9;            // seconds
+    let goal = null;                       // {hx,hy,sx,sy,sr}
 
     function makeLevel(){
       const W = world.width(), H = world.height();
       ball.x = rng(40, 80);
       ball.y = rng(40, 80);
-      const speed = 70 + (level-1)*12;
+      const base = 70 + (level-1)*12;
+      const speed = base * SPEED_SCALE;
       const ang = rng(0, Math.PI*2);
       ball.vx = Math.cos(ang) * speed;
       ball.vy = Math.sin(ang) * speed;
 
-      // Bar length to half (以前は ~200px)
+      // Bar length to half
       const w = 100, h = 25;
       const x = W/2 - w/2;
       const y = H - 120;
@@ -136,6 +145,7 @@
 
       startedAt = performance.now();
       hudLevel.textContent = `LV ${level}`;
+      win = false; goalAnim = 0; goal = null;
     }
 
     function resetLevel(){ makeLevel(); }
@@ -207,34 +217,50 @@
     }
 
     let last = performance.now();
-    let win = false;
 
     function update(dt){
-      if (win) return;
-      ball.x += ball.vx * dt;
-      ball.y += ball.vy * dt;
-      ball.rotation += dt * 0.5; // slow rotation
+      // rotation
+      ball.rotation += dt * ROT_SPEED;
 
-      // Screen bounds (with hit sound)
-      if (ball.x - ball.r < 0){ ball.x = ball.r; ball.vx = Math.abs(ball.vx); playHit(); }
-      if (ball.x + ball.r > world.width()){ ball.x = world.width() - ball.r; ball.vx = -Math.abs(ball.vx); playHit(); }
-      if (ball.y - ball.r < 0){ ball.y = ball.r; ball.vy = Math.abs(ball.vy); playHit(); }
-      if (ball.y + ball.r > world.height()){ ball.y = world.height() - ball.r; ball.vy = -Math.abs(ball.vy); playHit(); }
+      if (!win){
+        // linear motion
+        ball.x += ball.vx * dt;
+        ball.y += ball.vy * dt;
 
-      const w = walls[0];
-      if (circleRectCollide(ball.x, ball.y, ball.r, w.x, w.y, w.w, w.h)) reflectOnRect(ball, w);
+        // Screen bounds
+        if (ball.x - ball.r < 0){ ball.x = ball.r; ball.vx = Math.abs(ball.vx); playHit(); }
+        if (ball.x + ball.r > world.width()){ ball.x = world.width() - ball.r; ball.vx = -Math.abs(ball.vx); playHit(); }
+        if (ball.y - ball.r < 0){ ball.y = ball.r; ball.vy = Math.abs(ball.vy); playHit(); }
+        if (ball.y + ball.r > world.height()){ ball.y = world.height() - ball.r; ball.vy = -Math.abs(ball.vy); playHit(); }
 
-      const hx = world.width()/2, hy = world.height()/2; const hr = world.holeR;
-      const dx = ball.x - hx, dy = ball.y - hy; const d2 = dx*dx + dy*dy;
-      if (d2 < (hr * hr)){
-        win = true;
-        ball.vx = ball.vy = 0;
-        alert('クリア！🎉');
+        // Bar
+        const w = walls[0];
+        if (circleRectCollide(ball.x, ball.y, ball.r, w.x, w.y, w.w, w.h)) reflectOnRect(ball, w);
+
+        // Goal check
+        const hx = world.width()/2, hy = world.height()/2; const hr = world.holeR;
+        const dx = ball.x - hx, dy = ball.y - hy; const d2 = dx*dx + dy*dy;
+        if (d2 < (hr * hr)){
+          win = true;
+          goalAnim = 0;
+          goal = { hx, hy, sx: ball.x, sy: ball.y, sr: ball.r };
+          // stop physical motion
+          ball.vx = 0; ball.vy = 0;
+        }
+      } else {
+        // Animate suction to hole
+        if (goal && goalAnim < 1){
+          goalAnim = Math.min(1, goalAnim + dt / GOAL_ANIM_DUR);
+          const t = goalAnim * goalAnim; // ease-in
+          ball.x = goal.sx + (goal.hx - goal.sx) * t;
+          ball.y = goal.sy + (goal.hy - goal.sy) * t;
+        }
       }
 
-      const t = Math.floor((performance.now() - startedAt)/1000);
-      const mm = String(Math.floor(t/60)).padStart(2,'0');
-      const ss = String(t%60).padStart(2,'0');
+      // HUD time
+      const tsec = Math.floor((performance.now() - startedAt)/1000);
+      const mm = String(Math.floor(tsec/60)).padStart(2,'0');
+      const ss = String(tsec%60).padStart(2,'0');
       hudTime.textContent = `${mm}:${ss}`;
     }
 
@@ -247,19 +273,33 @@
       ctx.fillStyle = 'rgba(0,0,0,0.8)';
       ctx.beginPath(); ctx.arc(hx,hy,hr,0,Math.PI*2); ctx.fill();
 
+      // suction glow when winning
+      if (win){
+        ctx.save();
+        ctx.globalAlpha = 0.35*(1-goalAnim);
+        ctx.strokeStyle = 'rgba(103,232,249,0.6)';
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(hx,hy,hr+3+6*Math.sin(performance.now()/150),0,Math.PI*2); ctx.stroke();
+        ctx.restore();
+      }
+
       // draggable bar (shorter)
       const w = walls[0];
       ctx.fillStyle = 'rgba(0,255,255,0.4)';
       ctx.beginPath(); ctx.roundRect(w.x, w.y, w.w, w.h, 10);
       ctx.fill();
 
-      // ball (image 70% scale or placeholder)
+      // current visual scale (shrink into hole)
+      const shrink = win ? (1 - 0.85 * (goalAnim*goalAnim)) : 1;
+      const drawScale = IMG_SCALE * shrink;
+
+      // ball (image or placeholder)
       if (catReady && !catError && catImg.naturalWidth > 0) {
         try {
           ctx.save();
           ctx.translate(ball.x, ball.y);
           ctx.rotate(ball.rotation);
-          const size = ball.r * 2 * IMG_SCALE;
+          const size = ball.r * 2 * drawScale;
           ctx.drawImage(catImg, -size/2, -size/2, size, size);
           ctx.restore();
         } catch (e) {
@@ -269,7 +309,7 @@
       }
       if (!catReady || catError) {
         ctx.fillStyle = '#10b981';
-        ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r * IMG_SCALE, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r * drawScale, 0, Math.PI*2); ctx.fill();
       }
     }
 
