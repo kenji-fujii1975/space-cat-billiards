@@ -54,7 +54,7 @@
     const AUTO_CAPTURE_DIST_MULT = 1.6;    // これ未満の距離で自動捕獲モードへ
     const AUTO_CAPTURE_TIME = 0.7;         // 自動捕獲の所要時間(秒)
 
-    let walls=[]; let win=false, goalAnim=0, goal=null, postWinHandled=false; let hiddenAfterWin=false;
+    let walls=[]; let win=false, goalAnim=0, goal=null, postWinHandled=false; let hiddenAfterWin=false; let pendingEnding=0;
 
     // 自動捕獲モード（スムーズに中心へ吸い込む）
     let capturing=false, captureT=0, captureStart=null;
@@ -63,22 +63,22 @@
     let msgText=''; let msgTimer=0; const MSG_DUR=1.5; let awaitingTap=false; let msgType=null; let msgRect=null;
 
     let catReady=false, catError=false, zabutonReady=false; 
-    catImg.onload=()=>{catReady=true}; 
-    catImg.onerror=()=>{catError=true}; 
-    zabutonImg.onload=()=>{zabutonReady=true};
+    catImg.onload=function(){catReady=true}; 
+    catImg.onerror=function(){catError=true}; 
+    zabutonImg.onload=function(){zabutonReady=true};
 
     // ===== Audio =====
     let audioUnlocked=false, lastHitAt=0;
     function unlockAudioOnce(){
       if (audioUnlocked) return;
       const tasks=[];
-      try{ hitBase.volume=0; tasks.push(hitBase.play().then(()=>{hitBase.pause(); hitBase.currentTime=0; hitBase.volume=1;})); }catch(_){ }
+      try{ hitBase.volume=0; tasks.push(hitBase.play().then(function(){hitBase.pause(); hitBase.currentTime=0; hitBase.volume=1;})); }catch(_){ }
       audioUnlocked=true;
-      Promise.allSettled(tasks).finally(()=>{});
+      Promise.allSettled(tasks).finally(function(){});
     }
-    function playBgm(){ try{ if (bgm.paused) { bgm.currentTime=0; bgm.play().catch(()=>{}); } }catch(_){} }
+    function playBgm(){ try{ if (bgm.paused) { bgm.currentTime=0; bgm.play().catch(function(){}); } }catch(_){} }
     function stopBgm(){ try{ if (!bgm.paused) bgm.pause(); }catch(_){} }
-    function playHit(){ const now=performance.now(); if (now-lastHitAt<120) return; lastHitAt=now; try{ const a=hitBase.cloneNode(); a.volume=0.9; a.play().catch(()=>{});}catch(_){}}
+    function playHit(){ const now=performance.now(); if (now-lastHitAt<120) return; lastHitAt=now; try{ const a=hitBase.cloneNode(); a.volume=0.9; a.play().catch(function(){});}catch(_){}}
 
     // ===== UI States =====
     function showOverlay(src){ overlayImg.src = src; overlay.style.display='flex'; }
@@ -86,7 +86,7 @@
 
     function applyBackground(){
       let url='back.png'; if (level===2) url='back2.png'; if (level===3) url='back3.png';
-      document.body.style.backgroundImage = `url('${url}')`;
+      document.body.style.backgroundImage = "url('"+url+"')";
       document.body.style.backgroundPosition='center center'; document.body.style.backgroundRepeat='no-repeat'; document.body.style.backgroundSize='cover'; document.body.style.backgroundAttachment='fixed';
     }
 
@@ -123,41 +123,41 @@
     }
 
     // ===== Input =====
-    function posFromEvent(e){ if(e.touches&&e.touches.length){const t=e.touches[0]; return {x:t.clientX,y:t.clientY};} if(e.changedTouches&&e.changedTouches.length){const t=e.changedTouches[0]; return {x:t.clientX,y:t.clientY};} return {x:e.clientX,y:e.clientY}; }
+    function posFromEvent(e){ if(e && e.touches && e.touches.length){const t=e.touches[0]; return {x:t.clientX,y:t.clientY};} if(e && e.changedTouches && e.changedTouches.length){const t=e.changedTouches[0]; return {x:t.clientX,y:t.clientY};} return {x:(e?e.clientX:0),y:(e?e.clientY:0)}; }
 
     // オーバーレイ直付け（タイトル→開始 / エンディング→タイトル）
     function startFromOverlay(e){
-      if (gameState === 'title') { startGame(); e?.preventDefault?.(); return; }
-      if (gameState === 'ending') { goTitle(); e?.preventDefault?.(); return; }
+      if (gameState === 'title') { startGame(); if(e && e.preventDefault) e.preventDefault(); return; }
+      if (gameState === 'ending') { goTitle(); if(e && e.preventDefault) e.preventDefault(); return; }
     }
-    ['pointerdown','touchstart','mousedown','click'].forEach(t=>{
+    ;['pointerdown','touchstart','mousedown','click'].forEach(function(t){
       overlay.addEventListener(t, startFromOverlay, {passive:false});
     });
 
     function onAnyDown(e){
       const p=posFromEvent(e);
-      if (gameState==='title'){ startGame(); e.preventDefault(); return; }
-      if (gameState==='ending'){ goTitle(); e.preventDefault(); return; }
+      if (gameState==='title'){ startGame(); if(e && e.preventDefault) e.preventDefault(); return; }
+      if (gameState==='ending'){ goTitle(); if(e && e.preventDefault) e.preventDefault(); return; }
 
       // message button tap
-      if (awaitingTap && msgRect){ const {x,y,w,h}=msgRect; if(p.x>=x&&p.x<=x+w&&p.y>=y&&p.y<=y+h){ if (msgType==='next'){ level=clampLevel(level+1);} else if (msgType==='congratsTap'){ level=1;} awaitingTap=false; msgText=''; msgType=null; msgRect=null; makeLevel(); e.preventDefault(); return; } }
+      if (awaitingTap && msgRect){ const x=msgRect.x,y=msgRect.y,w=msgRect.w,h=msgRect.h; if(p.x>=x&&p.x<=x+w&&p.y>=y&&p.y<=y+h){ if (msgType==='next'){ level=clampLevel(level+1);} else if (msgType==='congratsTap'){ level=1;} awaitingTap=false; msgText=''; msgType=null; msgRect=null; makeLevel(); if(e && e.preventDefault) e.preventDefault(); return; } }
 
       // drag start
       const wb=walls[0]; if (wb && p.x>=wb.x&&p.x<=wb.x+wb.w&&p.y>=wb.y&&p.y<=wb.y+wb.h){ dragging=true; dragOffset.x=p.x-wb.x; dragOffset.y=p.y-wb.y; }
-      e.preventDefault();
+      if(e && e.preventDefault) e.preventDefault();
     }
     let dragging=false; const dragOffset={x:0,y:0};
-    function onMove(e){ if(!dragging||gameState!=='play') return; const p=posFromEvent(e); const w=walls[0]; if(!w) return; w.x=Math.min(world.width()-w.w, Math.max(0, p.x-dragOffset.x)); w.y=Math.min(world.height()-w.h, Math.max(0, p.y-dragOffset.y)); e.preventDefault(); }
+    function onMove(e){ if(!dragging||gameState!=='play') return; const p=posFromEvent(e); const w=walls[0]; if(!w) return; w.x=Math.min(world.width()-w.w, Math.max(0, p.x-dragOffset.x)); w.y=Math.min(world.height()-w.h, Math.max(0, p.y-dragOffset.y)); if(e && e.preventDefault) e.preventDefault(); }
     function onUp(){ dragging=false; }
 
     // attach listeners globally
-    ['mousedown','touchstart','pointerdown','click'].forEach(t=>{ addEventListener(t,onAnyDown,{passive:false}); });
-    ['mousemove','touchmove','pointermove'].forEach(t=>{ addEventListener(t,onMove,{passive:false}); });
-    ['mouseup','touchend','pointerup','pointercancel'].forEach(t=>{ addEventListener(t,onUp,{passive:true}); });
+    ;['mousedown','touchstart','pointerdown','click'].forEach(function(t){ addEventListener(t,onAnyDown,{passive:false}); });
+    ;['mousemove','touchmove','pointermove'].forEach(function(t){ addEventListener(t,onMove,{passive:false}); });
+    ;['mouseup','touchend','pointerup','pointercancel'].forEach(function(t){ addEventListener(t,onUp,{passive:true}); });
 
     // ===== Physics & Render =====
     function circleRectCollide(cx,cy,cr,rx,ry,rw,rh){ const closestX=Math.max(rx,Math.min(cx,rx+rw)); const closestY=Math.max(ry,Math.min(cy,ry+rh)); const dx=cx-closestX, dy=cy-closestY; return dx*dx+dy*dy<=cr*cr; }
-    function reflectOnRect(ball,rect){ const{ x:cx,y:cy,r:cr}=ball; const{ x:rx,y:ry,w:rw,h:rh}=rect; const penLeft=Math.abs((cx+cr)-rx); const penRight=Math.abs((rx+rw)-(cx-cr)); const penTop=Math.abs((cy+cr)-ry); const penBottom=Math.abs((ry+rh)-(cy-cr)); const minPen=Math.min(penLeft,penRight,penTop,penBottom); const restitution=0.98; if(minPen===penLeft){ball.x=rx-cr;ball.vx=-Math.abs(ball.vx)*restitution;} else if(minPen===penRight){ball.x=rx+rw+cr;ball.vx=Math.abs(ball.vx)*restitution;} else if(minPen===penTop){ball.y=ry-cr;ball.vy=-Math.abs(ball.vy)*restitution;} else {ball.y=ry+rh+cr;ball.vy=Math.abs(ball.vy)*restitution;} playHit(); }
+    function reflectOnRect(ball,rect){ const cx=ball.x, cy=ball.y, cr=ball.r; const rx=rect.x, ry=rect.y, rw=rect.w, rh=rect.h; const penLeft=Math.abs((cx+cr)-rx); const penRight=Math.abs((rx+rw)-(cx-cr)); const penTop=Math.abs((cy+cr)-ry); const penBottom=Math.abs((ry+rh)-(cy-cr)); const minPen=Math.min(penLeft,penRight,penTop,penBottom); const restitution=0.98; if(minPen===penLeft){ball.x=rx-cr;ball.vx=-Math.abs(ball.vx)*restitution;} else if(minPen===penRight){ball.x=rx+rw+cr;ball.vx=Math.abs(ball.vx)*restitution;} else if(minPen===penTop){ball.y=ry-cr;ball.vy=-Math.abs(ball.vy)*restitution;} else {ball.y=ry+rh+cr;ball.vy=Math.abs(ball.vy)*restitution;} playHit(); }
 
     let last=performance.now();
     function update(dt){
@@ -211,10 +211,11 @@
         ball.vy += ay * dt;
       }
 
-      // 速度が小さく近いなら捕獲
+      // リム付近や低速なら即「自動捕獲モード」へ
       const speed = Math.hypot(ball.vx, ball.vy);
-      if (!capturing && dist < captureR * 1.15 && speed < VEL_CAPTURE_THRESH){
-        win=true; goalAnim=0; goal={hx,hy,sx:ball.x,sy:ball.y}; ball.vx=0; ball.vy=0;
+      if (!win && !capturing && (dist <= captureR * 1.02 || (dist < captureR * 1.15 && speed < VEL_CAPTURE_THRESH))){
+        capturing = true; captureT = 0; captureStart = {x:ball.x, y:ball.y};
+        ball.vx = 0; ball.vy = 0;
       }
 
       // 一定距離以内なら「自動捕獲モード」で位置を補間（停止を防ぐ）
@@ -230,12 +231,11 @@
         const tt = t*t; // イーズイン
         ball.x = captureStart.x + (hx - captureStart.x) * tt;
         ball.y = captureStart.y + (hy - captureStart.y) * tt;
-        // 途中で勝手に広がらないよう常に中心へ
         if (t >= 1){
           capturing = false;
           win = true;
           goalAnim = 0;
-          goal = {hx, hy, sx:ball.x, sy:ball.y};
+          goal = {hx: hx, hy: hy, sx: ball.x, sy: ball.y};
         }
       }
 
@@ -248,22 +248,19 @@
         }
       }
 
-      // ゴール判定（広め）
-      if (!win && dist < captureR){
-        win=true; 
-        goalAnim=0; 
-        goal={hx,hy,sx:ball.x,sy:ball.y}; 
-        ball.vx=0; 
-        ball.vy=0;
+      // ゴール判定（広め）→ 直接勝利にはせず、補間で必ず吸い込む
+      if (!win && !capturing && dist < captureR){
+        capturing = true; captureT = 0; captureStart = {x:ball.x, y:ball.y};
+        ball.vx = 0; ball.vy = 0;
       }
 
       // 勝利後アニメ
       if (win){
         if(goal && goalAnim<1){
           goalAnim=Math.min(1, goalAnim+dt/0.9);
-          const t=goalAnim*goalAnim;
-          ball.x=goal.sx+(goal.hx-goal.sx)*t; 
-          ball.y=goal.sy+(goal.hy-goal.sy)*t;
+          const t2=goalAnim*goalAnim;
+          ball.x=goal.sx+(goal.hx-goal.sx)*t2; 
+          ball.y=goal.sy+(goal.hy-goal.sy)*t2;
         }
         if(!postWinHandled && goalAnim>=1){
           hiddenAfterWin = true; // 完全に消す
@@ -271,6 +268,14 @@
           if(level<3){
             setMessage('NEXT STAGE!','next');
           }else{
+            // ステージ3クリア後は2秒だけ投影してからエンディングへ
+            pendingEnding = 2.0;
+          }
+        }
+        // レベル3クリア後のエンディング遅延を処理
+        if (pendingEnding > 0){
+          pendingEnding -= dt;
+          if (pendingEnding <= 0){
             goEnding();
           }
         }
@@ -288,7 +293,7 @@
       const shrink = win ? Math.max(0, 1 - goalAnim) : 1; const drawScale = IMG_SCALE*shrink;
       if (!hiddenAfterWin && catReady && !catError && catImg.naturalWidth>0){ ctx.save(); ctx.translate(ball.x,ball.y); ctx.rotate(ball.rotation); const size=ball.r*2*drawScale; if (size>0.5){ try{ ctx.drawImage(catImg,-size/2,-size/2,size,size); }catch(_){ catError=true; } } ctx.restore(); } else { ctx.fillStyle='#10b981'; ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r*drawScale,0,Math.PI*2); ctx.fill(); }
       // overlay message
-      msgRect=null; if (msgText){ let alpha=1; if (msgType!=='next'&&msgType!=='congratsTap'){ const t=Math.min(1,msgTimer/MSG_DUR); alpha=1-t; } if(alpha>0){ ctx.save(); ctx.globalAlpha=alpha; const fontSize=Math.max(36, Math.min(W,H)*0.12); ctx.font=`900 ${fontSize}px system-ui, -apple-system`; ctx.textAlign='center'; ctx.textBaseline='middle'; const x=W/2,y=H*0.25; const tw=ctx.measureText(msgText).width, th=fontSize*1.2, pad=24; if(awaitingTap){ const rx=x-tw/2-pad, ry=y-th/2-pad/2, rw=tw+pad*2, rh=th+pad; pathRoundRect(ctx,rx,ry,rw,rh,14); ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fill(); msgRect={x:rx,y:ry,w:rw,h:rh}; } ctx.fillStyle='#fff'; ctx.fillText(msgText,x,y); ctx.restore(); } }
+      msgRect=null; if (msgText){ let alpha=1; if (msgType!=='next'&&msgType!=='congratsTap'){ const t=Math.min(1,msgTimer/MSG_DUR); alpha=1-t; } if(alpha>0){ ctx.save(); ctx.globalAlpha=alpha; const fontSize=Math.max(36, Math.min(W,H)*0.12); ctx.font="900 "+fontSize+"px system-ui, -apple-system"; ctx.textAlign='center'; ctx.textBaseline='middle'; const x=W/2,y=H*0.25; const tw=ctx.measureText(msgText).width, th=fontSize*1.2, pad=24; if(awaitingTap){ const rx=x-tw/2-pad, ry=y-th/2-pad/2, rw=tw+pad*2, rh=th+pad; pathRoundRect(ctx,rx,ry,rw,rh,14); ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fill(); msgRect={x:rx,y:ry,w:rw,h:rh}; } ctx.fillStyle='#fff'; ctx.fillText(msgText,x,y); ctx.restore(); } }
     }
 
     function pathRoundRect(ctx,x,y,w,h,r){ const rr=Math.max(0, Math.min(r,w/2,h/2)); ctx.beginPath(); ctx.moveTo(x+rr,y); ctx.lineTo(x+w-rr,y); ctx.quadraticCurveTo(x+w,y,x+w,y+rr); ctx.lineTo(x+w,y+h-rr); ctx.quadraticCurveTo(x+w,y+h,x+w-rr,y+h); ctx.lineTo(x+rr,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-rr); ctx.lineTo(x,y+rr); ctx.quadraticCurveTo(x,y,x+rr,y); ctx.closePath(); }
@@ -304,6 +309,10 @@
     assert('initial state is title', gameState==='title');
     assert('bgm loop', bgm.loop===true);
     (function(){ const hit=circleRectCollide(50,50,20,40,40,40,10); const miss=circleRectCollide(10,10,5,40,40,40,10); assert('circle-rect hit',hit===true); assert('circle-rect miss',miss===false); })();
+    // 追加テスト: 定数と関数の存在確認
+    assert('AUTO_CAPTURE_TIME positive', AUTO_CAPTURE_TIME>0);
+    assert('goEnding is function', typeof goEnding==='function');
+    assert('applyBackground available', typeof applyBackground==='function');
   });
   </script>
 </body>
