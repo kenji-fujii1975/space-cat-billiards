@@ -144,6 +144,7 @@
     // 'play'  -> gameplay
     // 'ending' -> show end.png and wait for tap to return title
     let gameState = 'title';
+    let showTitleOnCanvas = true; // 冗長表示: 背景+canvasの両方で描く安全策
 
     function setMessage(t, type){
       msgText=t; msgTimer=0; msgType=type||null;
@@ -190,11 +191,18 @@
       gameState = 'title';
       level = 1;
       awaitingTap = false; msgText = ''; msgType = null; msgRect = null; win=false; postWinHandled=false; goal=null; goalAnim=0;
-      // タイトル中はステージ背景を完全に消す
-      document.body.style.backgroundImage = 'none';
+      // タイトルは body 背景に top.png を表示
       document.body.style.backgroundColor = '#000';
+      document.body.style.backgroundImage = "url('top.png')";
+      document.body.style.backgroundPosition = 'center center';
+      document.body.style.backgroundRepeat = 'no-repeat';
+      document.body.style.backgroundSize = 'contain';
+      document.body.style.backgroundAttachment = 'fixed';
+      showTitleOnCanvas = true; // 念のためcanvasにも描く
       // タイトルではBGMは鳴らさない
       try { if (!bgm.paused) { bgm.pause(); } } catch(_){}
+    } } catch(_){}
+    } } catch(_){}
     }); } } catch(_){}
     }); } } catch(_){}
     }
@@ -212,18 +220,12 @@
 
       // Title tap to start
       if (gameState === 'title'){
-        // draw top.png centered with contain
-        if (topReady && topImg.naturalWidth>0){
-          const iw = topImg.naturalWidth, ih = topImg.naturalHeight;
-          const s = Math.min(W/iw, H/ih);
-          const dw = iw*s, dh = ih*s;
-          const dx = (W-dw)/2, dy = (H-dh)/2;
-          ctx.drawImage(topImg, dx, dy, dw, dh);
-        } else {
-          ctx.fillStyle = '#000';
-          ctx.fillRect(0,0,W,H);
-        }
-        msgRect = null; // not used on title
+        // どこでもタップで開始（仕様変更）
+        startGame();
+        // BGM起動
+        if (!audioUnlocked) unlockAudioOnce();
+        try { if (bgm.paused) { bgm.currentTime = 0; bgm.play().catch(()=>{}); } } catch(_){}
+        e.preventDefault();
         return;
       }
 
@@ -238,10 +240,6 @@
           ctx.fillStyle = '#000';
           ctx.fillRect(0,0,W,H);
         }
-        return;
-      }) { bgm.currentTime = 0; bgm.play().catch(()=>{}); } } catch(_){}
-        }
-        e.preventDefault();
         return;
       }
 
